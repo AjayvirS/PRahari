@@ -4,10 +4,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import app.webhook as wh
 from app.main import app
 
 
@@ -16,7 +18,10 @@ def _make_signature(payload: bytes, secret: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_webhook_ignores_non_pr_event() -> None:
+async def test_webhook_ignores_non_pr_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    enqueue_mock = AsyncMock()
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -28,11 +33,64 @@ async def test_webhook_ignores_non_pr_event() -> None:
 
     assert response.status_code == 202
     assert response.json()["status"] == "ignored"
+    enqueue_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_webhook_queues_pr_opened_event() -> None:
-    payload = {"action": "opened", "number": 42, "repository": {"full_name": "org/repo"}}
+async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "action": "opened",
+        "number": 42,
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {"head": {"sha": "abc123"}},
+    }
+    enqueue_mock = AsyncMock()
+    log_calls: list[tuple[str, dict[str, object]]] = []
+    original_info = wh.logger.info
+
+    def capture_log(event: str, **kwargs: object) -> None:
+        log_calls.append((event, kwargs))
+        original_info(event, **kwargs)
+
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    monkeypatch.setattr(wh.logger, "info", capture_log)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/webhook",
+            json=payload,
+            headers={
+                "X-GitHub-Event": "pull_request",
+                "X-GitHub-Delivery": "delivery-123",
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    enqueue_mock.assert_awaited_once_with(payload)
+    assert ("webhook.received", {
+        "delivery_id": "delivery-123",
+        "github_event": "pull_request",
+        "action": "opened",
+        "repo": "org/repo",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "supported": True,
+    }) in log_calls
+
+
+@pytest.mark.asyncio
+async def test_webhook_queues_pr_synchronize_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "action": "synchronize",
+        "number": 7,
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {"head": {"sha": "def456"}},
+    }
+    enqueue_mock = AsyncMock()
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -45,11 +103,19 @@ async def test_webhook_queues_pr_opened_event() -> None:
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
+    enqueue_mock.assert_awaited_once_with(payload)
 
 
 @pytest.mark.asyncio
-async def test_webhook_queues_pr_synchronize_event() -> None:
-    payload = {"action": "synchronize", "number": 7, "repository": {"full_name": "org/repo"}}
+async def test_webhook_queues_pr_reopened_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "action": "reopened",
+        "number": 9,
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {"head": {"sha": "ghi789"}},
+    }
+    enqueue_mock = AsyncMock()
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -62,11 +128,14 @@ async def test_webhook_queues_pr_synchronize_event() -> None:
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
+    enqueue_mock.assert_awaited_once_with(payload)
 
 
 @pytest.mark.asyncio
-async def test_webhook_ignores_pr_closed_event() -> None:
+async def test_webhook_ignores_pr_closed_event(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {"action": "closed", "number": 1, "repository": {"full_name": "org/repo"}}
+    enqueue_mock = AsyncMock()
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -79,22 +148,50 @@ async def test_webhook_ignores_pr_closed_event() -> None:
 
     assert response.status_code == 202
     assert response.json()["status"] == "ignored"
+    enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_webhook_accepts_valid_signature(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "supersecret"
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", secret)
+
+    payload = {
+        "action": "opened",
+        "number": 10,
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {"head": {"sha": "valid123"}},
+    }
+    payload_bytes = json.dumps(payload).encode()
+    signature = _make_signature(payload_bytes, secret)
+    enqueue_mock = AsyncMock()
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/webhook",
+            content=payload_bytes,
+            headers={
+                "X-GitHub-Event": "pull_request",
+                "X-Hub-Signature-256": signature,
+                "Content-Type": "application/json",
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    enqueue_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_webhook_rejects_invalid_signature(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "supersecret")
-
-    # Re-import settings so the env var is picked up.
-    import importlib
-
-    import app.config as cfg
-    import app.webhook as wh
-
-    importlib.reload(cfg)
-    importlib.reload(wh)
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", "supersecret")
 
     payload = json.dumps({"action": "opened"}).encode()
+    enqueue_mock = AsyncMock()
+    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -110,3 +207,4 @@ async def test_webhook_rejects_invalid_signature(monkeypatch: pytest.MonkeyPatch
         )
 
     assert response.status_code == 401
+    enqueue_mock.assert_not_awaited()

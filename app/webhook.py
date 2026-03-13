@@ -1,7 +1,8 @@
 """Webhook receiver endpoint.
 
-GitHub sends PR events here.  The endpoint validates the HMAC signature
-(when a webhook secret is configured) and enqueues the event for the worker.
+GitHub sends events here. The endpoint validates the HMAC signature,
+extracts normalized metadata, logs key fields, and accepts only supported
+pull request events for downstream processing.
 """
 from __future__ import annotations
 
@@ -59,13 +60,14 @@ def _parse_webhook_metadata(
     repository = payload.get("repository") or {}
     pull_request = payload.get("pull_request") or {}
     head = pull_request.get("head") or {}
+    pr_number = payload.get("number") or pull_request.get("number")
 
     return {
         "delivery_id": delivery_id,
         "event_type": github_event,
         "action": action,
         "repo": repository.get("full_name"),
-        "pr_number": payload.get("number"),
+        "pr_number": pr_number,
         "head_sha": head.get("sha"),
         "supported": github_event == "pull_request" and action in SUPPORTED_PR_ACTIONS,
     }
@@ -78,10 +80,11 @@ async def receive_webhook(
     x_github_delivery: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    """Receive a GitHub webhook event and enqueue it for processing.
+    """Receive a GitHub webhook event and accept supported PR events.
 
-    Only ``pull_request`` events with an ``opened``, `` reopened``  or ``synchronize`` action
-    are enqueued; all others are acknowledged and discarded.
+    Only ``pull_request`` events with an ``opened``, ``reopened``, or
+    ``synchronize`` action are accepted for downstream processing; all others
+    are acknowledged and ignored.
 
     Returns:
         A JSON object with a ``status`` field.
@@ -98,13 +101,25 @@ async def receive_webhook(
 
     logger.info(
         "webhook.received",
+        delivery_id=metadata["delivery_id"],
         github_event=metadata["event_type"],
         action=metadata["action"],
+        repo=metadata["repo"],
+        pr_number=metadata["pr_number"],
+        head_sha=metadata["head_sha"],
+        supported=metadata["supported"],
     )
 
     if metadata["supported"]:
         await q.enqueue(payload)
-        logger.info("queued event")
         return {"status": "queued"}
 
+    logger.info(
+        "webhook.ignored",
+        delivery_id=metadata["delivery_id"],
+        github_event=metadata["event_type"],
+        action=metadata["action"],
+        repo=metadata["repo"],
+        pr_number=metadata["pr_number"],
+    )
     return {"status": "ignored"}
