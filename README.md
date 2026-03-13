@@ -21,6 +21,8 @@ GitHub  ──webhook──▶  /webhook  ──enqueue──▶  asyncio Queue 
 | Web app & health | `app/main.py` | FastAPI app, `/health`, lifespan management |
 | Webhook receiver | `app/webhook.py` | Accept GitHub events, HMAC verification, enqueue |
 | Queue | `app/queue.py` | Thin asyncio.Queue wrapper (swap for Redis later) |
+| Database | `app/database.py` | SQLite setup and migration runner |
+| Review jobs | `app/review_jobs.py` | Durable review job repository and dedup logic |
 | Worker | `app/worker.py` | Consume events, dispatch to reviewer |
 | Reviewer | `app/reviewer.py` | Placeholder — LLM review logic goes here |
 | GitHub client | `app/github_client.py` | Placeholder — GitHub REST API wrapper |
@@ -69,6 +71,7 @@ Edit `.env` and fill in:
 | `APP_HOST` | Bind host | No (default: `0.0.0.0`) |
 | `APP_PORT` | Bind port | No (default: `8000`) |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | No (default: `INFO`) |
+| `DATABASE_PATH` | SQLite database file path | No (default: `data/prahari.db`) |
 | `WORKER_POLL_INTERVAL` | Seconds between worker retries on error | No (default: `5`) |
 
 ### 4. Start the service
@@ -84,6 +87,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The service is now reachable at **http://localhost:8000**.
+On startup the app creates the SQLite database at `DATABASE_PATH` and applies
+pending migrations from `app/migrations/`.
 
 ---
 
@@ -104,6 +109,20 @@ docker compose up --build
 | `POST` | `/webhook` | GitHub webhook receiver |
 | `GET` | `/docs` | Interactive Swagger UI |
 | `GET` | `/openapi.json` | OpenAPI schema |
+
+## Review job schema
+
+The `review_jobs` table stores:
+
+- `job_id` as the primary key
+- `job_type` and `status`
+- `repo`, `pr_number`, and `head_sha`
+- `retry_count`, `max_retries`, and `last_error`
+- `created_at`, `updated_at`, `claimed_at`, `completed_at`, and `failed_at`
+
+Dedup is enforced with a unique index on `(job_type, repo, pr_number, head_sha)`.
+That prevents repeated webhook deliveries for the same PR head SHA from creating
+duplicate review jobs while still allowing a new job for a new head SHA.
 
 ### Configure a GitHub webhook
 
@@ -153,10 +172,17 @@ PRahari/
 
 ---
 
+Database-related files added for the durable review job layer:
+
+- `app/database.py`
+- `app/migrations/001_create_review_jobs.sql`
+- `app/review_jobs.py`
+- `tests/test_review_jobs.py`
+
 ## What is not implemented yet
 
 - LLM-based review logic (see `app/reviewer.py`)
 - Inline PR comments via the GitHub Reviews API (see `app/github_client.py`)
-- Persistent queue (Redis / RabbitMQ)
+- Durable worker claiming and execution
 - Authentication / multi-tenant support
 
