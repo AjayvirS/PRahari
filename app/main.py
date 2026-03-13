@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.database import initialize_database
 from app.logging_config import configure_logging, get_logger
 from app.webhook import router as webhook_router
 from app.worker import run_worker
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown."""
     logger.info("app.startup", app_env=settings.app_env)
+    initialize_database()
     worker_task = asyncio.create_task(run_worker())
     yield
     worker_task.cancel()
