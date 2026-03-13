@@ -18,6 +18,7 @@ from app.logging_config import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+SUPPORTED_PR_ACTIONS = {"opened", "synchronize", "reopened"}
 
 
 def _verify_signature(payload: bytes, signature_header: str | None) -> None:
@@ -48,15 +49,38 @@ def _verify_signature(payload: bytes, signature_header: str | None) -> None:
         )
 
 
+def _parse_webhook_metadata(
+    github_event: str | None,
+    delivery_id: str | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract normalized metadata from a GitHub webhook payload."""
+    action = payload.get("action")
+    repository = payload.get("repository") or {}
+    pull_request = payload.get("pull_request") or {}
+    head = pull_request.get("head") or {}
+
+    return {
+        "delivery_id": delivery_id,
+        "event_type": github_event,
+        "action": action,
+        "repo": repository.get("full_name"),
+        "pr_number": payload.get("number"),
+        "head_sha": head.get("sha"),
+        "supported": github_event == "pull_request" and action in SUPPORTED_PR_ACTIONS,
+    }
+
+
 @router.post("/webhook", status_code=status.HTTP_202_ACCEPTED)
 async def receive_webhook(
     request: Request,
     x_github_event: str | None = Header(default=None),
+    x_github_delivery: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Receive a GitHub webhook event and enqueue it for processing.
 
-    Only ``pull_request`` events with an ``opened`` or ``synchronize`` action
+    Only ``pull_request`` events with an ``opened``, `` reopened``  or ``synchronize`` action
     are enqueued; all others are acknowledged and discarded.
 
     Returns:
@@ -66,16 +90,21 @@ async def receive_webhook(
     _verify_signature(payload_bytes, x_hub_signature_256)
 
     payload: dict[str, Any] = await request.json()
-    action: str = payload.get("action", "")
+    metadata = _parse_webhook_metadata(
+        github_event=x_github_event,
+        delivery_id=x_github_delivery,
+        payload=payload,
+    )
 
     logger.info(
         "webhook.received",
-        github_event=x_github_event,
-        action=action,
+        github_event=metadata["event_type"],
+        action=metadata["action"],
     )
 
-    if x_github_event == "pull_request" and action in {"opened", "synchronize"}:
+    if metadata["supported"]:
         await q.enqueue(payload)
+        logger.info("queued event")
         return {"status": "queued"}
 
     return {"status": "ignored"}
