@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     log_level: str = "INFO"
+    database_path: str = "data/prahari.db"
 
     # Worker
     worker_poll_interval: int = 5
