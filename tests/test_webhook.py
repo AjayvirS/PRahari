@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import Mock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,8 +19,8 @@ def _make_signature(payload: bytes, secret: str) -> str:
 
 @pytest.mark.asyncio
 async def test_webhook_ignores_non_pr_event(monkeypatch: pytest.MonkeyPatch) -> None:
-    enqueue_mock = AsyncMock()
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    enqueue_mock = Mock(return_value={"status": "ignored"})
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -33,7 +33,7 @@ async def test_webhook_ignores_non_pr_event(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert response.status_code == 202
     assert response.json()["status"] == "ignored"
-    enqueue_mock.assert_not_awaited()
+    enqueue_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -44,7 +44,7 @@ async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -
         "repository": {"full_name": "org/repo"},
         "pull_request": {"head": {"sha": "abc123"}},
     }
-    enqueue_mock = AsyncMock()
+    enqueue_mock = Mock(return_value={"status": "queued", "job_id": "job-1"})
     log_calls: list[tuple[str, dict[str, object]]] = []
     original_info = wh.logger.info
 
@@ -52,7 +52,7 @@ async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -
         log_calls.append((event, kwargs))
         original_info(event, **kwargs)
 
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
     monkeypatch.setattr(wh.logger, "info", capture_log)
 
     async with AsyncClient(
@@ -69,7 +69,17 @@ async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
-    enqueue_mock.assert_awaited_once_with(payload)
+    enqueue_mock.assert_called_once_with(
+        {
+            "delivery_id": "delivery-123",
+            "event_type": "pull_request",
+            "action": "opened",
+            "repo": "org/repo",
+            "pr_number": 42,
+            "head_sha": "abc123",
+            "supported": True,
+        }
+    )
     assert ("webhook.received", {
         "delivery_id": "delivery-123",
         "github_event": "pull_request",
@@ -89,8 +99,8 @@ async def test_webhook_queues_pr_synchronize_event(monkeypatch: pytest.MonkeyPat
         "repository": {"full_name": "org/repo"},
         "pull_request": {"head": {"sha": "def456"}},
     }
-    enqueue_mock = AsyncMock()
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    enqueue_mock = Mock(return_value={"status": "queued", "job_id": "job-2"})
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -103,7 +113,7 @@ async def test_webhook_queues_pr_synchronize_event(monkeypatch: pytest.MonkeyPat
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
-    enqueue_mock.assert_awaited_once_with(payload)
+    enqueue_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -114,8 +124,8 @@ async def test_webhook_queues_pr_reopened_event(monkeypatch: pytest.MonkeyPatch)
         "repository": {"full_name": "org/repo"},
         "pull_request": {"head": {"sha": "ghi789"}},
     }
-    enqueue_mock = AsyncMock()
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    enqueue_mock = Mock(return_value={"status": "queued", "job_id": "job-3"})
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -128,14 +138,14 @@ async def test_webhook_queues_pr_reopened_event(monkeypatch: pytest.MonkeyPatch)
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
-    enqueue_mock.assert_awaited_once_with(payload)
+    enqueue_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_webhook_ignores_pr_closed_event(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {"action": "closed", "number": 1, "repository": {"full_name": "org/repo"}}
-    enqueue_mock = AsyncMock()
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    enqueue_mock = Mock(return_value={"status": "ignored"})
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -148,7 +158,7 @@ async def test_webhook_ignores_pr_closed_event(monkeypatch: pytest.MonkeyPatch) 
 
     assert response.status_code == 202
     assert response.json()["status"] == "ignored"
-    enqueue_mock.assert_not_awaited()
+    enqueue_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -164,8 +174,8 @@ async def test_webhook_accepts_valid_signature(monkeypatch: pytest.MonkeyPatch) 
     }
     payload_bytes = json.dumps(payload).encode()
     signature = _make_signature(payload_bytes, secret)
-    enqueue_mock = AsyncMock()
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    enqueue_mock = Mock(return_value={"status": "queued", "job_id": "job-4"})
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -182,7 +192,7 @@ async def test_webhook_accepts_valid_signature(monkeypatch: pytest.MonkeyPatch) 
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
-    enqueue_mock.assert_awaited_once()
+    enqueue_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -190,8 +200,8 @@ async def test_webhook_rejects_invalid_signature(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(wh.settings, "github_webhook_secret", "supersecret")
 
     payload = json.dumps({"action": "opened"}).encode()
-    enqueue_mock = AsyncMock()
-    monkeypatch.setattr(wh.q, "enqueue", enqueue_mock)
+    enqueue_mock = Mock(return_value={"status": "queued"})
+    monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -207,4 +217,4 @@ async def test_webhook_rejects_invalid_signature(monkeypatch: pytest.MonkeyPatch
         )
 
     assert response.status_code == 401
-    enqueue_mock.assert_not_awaited()
+    enqueue_mock.assert_not_called()

@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
-from app import queue as q
+from app.enqueue import enqueue_pull_request_event
 from app.config import settings
 from app.logging_config import get_logger
 
@@ -110,16 +110,5 @@ async def receive_webhook(
         supported=metadata["supported"],
     )
 
-    if metadata["supported"]:
-        await q.enqueue(payload)
-        return {"status": "queued"}
-
-    logger.info(
-        "webhook.ignored",
-        delivery_id=metadata["delivery_id"],
-        github_event=metadata["event_type"],
-        action=metadata["action"],
-        repo=metadata["repo"],
-        pr_number=metadata["pr_number"],
-    )
-    return {"status": "ignored"}
+    result = enqueue_pull_request_event(metadata)
+    return result
