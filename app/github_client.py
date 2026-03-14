@@ -1,8 +1,4 @@
-"""Placeholder GitHub API client.
-
-Uses *httpx* for async HTTP calls.  Authentication and concrete API methods
-will be added incrementally once the core service skeleton is in place.
-"""
+"""GitHub REST API client used by the worker."""
 from __future__ import annotations
 
 import httpx
@@ -28,21 +24,35 @@ class GitHubClient:
             self._headers["Authorization"] = f"Bearer {self._token}"
 
     async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> dict:
-        """Fetch a single pull request from GitHub.
-
-        Returns the raw JSON payload as a dictionary.
-
-        NOTE: This is a stub implementation.  The real HTTP call will be added
-        once the reviewer module is wired up.
-        """
-        logger.info(
-            "github.get_pr.stub",
-            owner=owner,
-            repo=repo,
-            pr_number=pr_number,
-            message="GitHub client is a placeholder; no real HTTP call made",
+        """Fetch a single pull request from GitHub."""
+        return await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
         )
-        return {}
+
+    async def post_issue_comment(
+        self, owner: str, repo: str, issue_number: int, body: str
+    ) -> dict:
+        """Post a comment on a pull request via the issues comments API."""
+        return await self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            json={"body": body},
+        )
+
+    async def _request(self, method: str, path: str, **kwargs: object) -> dict:
+        async with httpx.AsyncClient(base_url=_BASE_URL, timeout=30.0) as client:
+            response = await client.request(
+                method,
+                path,
+                headers=self._headers,
+                **kwargs,
+            )
+
+        response.raise_for_status()
+        payload = response.json()
+        logger.info("github.request", method=method, path=path, status_code=response.status_code)
+        return payload
 
 
 # Module-level singleton for convenience.
