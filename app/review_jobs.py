@@ -9,6 +9,9 @@ from app.database import get_connection
 
 REVIEW_JOB_TYPE = "review_pr"
 PENDING_STATUS = "pending"
+PROCESSING_STATUS = "processing"
+COMPLETED_STATUS = "completed"
+FAILED_STATUS = "failed"
 
 
 @dataclass(slots=True)
@@ -101,6 +104,89 @@ class ReviewJobRepository:
             ).fetchall()
 
         return [_row_to_review_job(row) for row in rows]
+
+    def claim_next_pending_job(self) -> ReviewJob | None:
+        """Claim the oldest pending review job for processing."""
+        with get_connection(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT *
+                FROM review_jobs
+                WHERE status = ?
+                ORDER BY created_at ASC, job_id ASC
+                LIMIT 1
+                """,
+                (PENDING_STATUS,),
+            ).fetchone()
+
+            if row is None:
+                connection.commit()
+                return None
+
+            connection.execute(
+                """
+                UPDATE review_jobs
+                SET status = ?,
+                    claimed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE job_id = ? AND status = ?
+                """,
+                (PROCESSING_STATUS, row["job_id"], PENDING_STATUS),
+            )
+            updated = connection.execute(
+                "SELECT * FROM review_jobs WHERE job_id = ?",
+                (row["job_id"],),
+            ).fetchone()
+            connection.commit()
+
+        return _row_to_review_job(updated)
+
+    def mark_job_completed(self, job_id: str) -> ReviewJob:
+        """Mark a processing job as completed."""
+        return self._update_job_status(
+            job_id=job_id,
+            status=COMPLETED_STATUS,
+            terminal_column="completed_at",
+            last_error=None,
+        )
+
+    def mark_job_failed(self, job_id: str, error_message: str) -> ReviewJob:
+        """Mark a processing job as failed and capture the last error."""
+        return self._update_job_status(
+            job_id=job_id,
+            status=FAILED_STATUS,
+            terminal_column="failed_at",
+            last_error=error_message,
+            increment_retry_count=True,
+        )
+
+    def _update_job_status(
+        self,
+        *,
+        job_id: str,
+        status: str,
+        terminal_column: str,
+        last_error: str | None,
+        increment_retry_count: bool = False,
+    ) -> ReviewJob:
+        retry_fragment = "retry_count = retry_count + 1," if increment_retry_count else ""
+        with get_connection(self._database_path) as connection:
+            connection.execute(
+                f"""
+                UPDATE review_jobs
+                SET status = ?,
+                    {retry_fragment}
+                    last_error = ?,
+                    updated_at = CURRENT_TIMESTAMP,
+                    {terminal_column} = CURRENT_TIMESTAMP
+                WHERE job_id = ?
+                """,
+                (status, last_error, job_id),
+            )
+            connection.commit()
+
+        return self.get_job(job_id)
 
 
 def _row_to_review_job(row: sqlite3.Row | None) -> ReviewJob:

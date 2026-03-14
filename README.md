@@ -1,32 +1,26 @@
-# PRahari
+﻿# PRahari
 
-A webhook/event-driven platform which facilitates auto-reviewing PRs for given repositories.
+A webhook-driven service for durable pull request review processing.
 
 ---
 
 ## Architecture overview
 
-```
-GitHub  ──webhook──▶  /webhook  ──enqueue──▶  asyncio Queue  ──dequeue──▶  Worker
-                      (FastAPI)                                              │
-                                                                            ▼
-                                                                      Reviewer (placeholder)
-                                                                            │
-                                                                            ▼
-                                                                      GitHub Client (placeholder)
+```text
+GitHub --> /webhook --> review_jobs (SQLite) --> worker --> GitHub PR comment
 ```
 
 | Module | Path | Responsibility |
 |---|---|---|
-| Web app & health | `app/main.py` | FastAPI app, `/health`, lifespan management |
-| Webhook receiver | `app/webhook.py` | Accept GitHub events, HMAC verification, enqueue |
-| Queue | `app/queue.py` | Thin asyncio.Queue wrapper (swap for Redis later) |
+| Web app and health | `app/main.py` | FastAPI app, `/health`, startup, shutdown |
+| Webhook receiver | `app/webhook.py` | Validate GitHub signatures, parse PR events, and route them into durable jobs |
+| Enqueue layer | `app/enqueue.py` | Convert supported PR events into review jobs with dedup handling |
 | Database | `app/database.py` | SQLite setup and migration runner |
-| Review jobs | `app/review_jobs.py` | Durable review job repository and dedup logic |
-| Worker | `app/worker.py` | Consume events, dispatch to reviewer |
-| Reviewer | `app/reviewer.py` | Placeholder — LLM review logic goes here |
-| GitHub client | `app/github_client.py` | Placeholder — GitHub REST API wrapper |
-| Config | `app/config.py` | `pydantic-settings` based env/`.env` loading |
+| Review jobs | `app/review_jobs.py` | Review job repository, dedup, claim, complete, and fail transitions |
+| Worker | `app/worker.py` | Claim pending jobs, fetch PR data, post placeholder comments, and mark job status |
+| GitHub client | `app/github_client.py` | GitHub REST API wrapper for pull request fetch and PR comment posting |
+| Reviewer | `app/reviewer.py` | Placeholder for future review generation logic |
+| Config | `app/config.py` | `pydantic-settings` based env and `.env` loading |
 | Logging | `app/logging_config.py` | Structured JSON logging via `structlog` |
 
 ---
@@ -34,13 +28,13 @@ GitHub  ──webhook──▶  /webhook  ──enqueue──▶  asyncio Queue 
 ## Prerequisites
 
 - Python 3.12+
-- (Optional) Docker + Docker Compose for the containerised setup
+- Optional: Docker and Docker Compose
 
 ---
 
-## Running locally (Python)
+## Running locally
 
-### 1. Clone & enter the repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/AjayvirS/PRahari.git
@@ -65,14 +59,14 @@ Edit `.env` and fill in:
 
 | Variable | Description | Required |
 |---|---|---|
-| `GITHUB_TOKEN` | Personal access token for GitHub API calls | Yes (for review features) |
-| `GITHUB_WEBHOOK_SECRET` | Secret set on the GitHub webhook | No (skips HMAC check when empty) |
-| `APP_ENV` | `development` or `production` | No (default: `development`) |
-| `APP_HOST` | Bind host | No (default: `0.0.0.0`) |
-| `APP_PORT` | Bind port | No (default: `8000`) |
-| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | No (default: `INFO`) |
-| `DATABASE_PATH` | SQLite database file path | No (default: `data/prahari.db`) |
-| `WORKER_POLL_INTERVAL` | Seconds between worker retries on error | No (default: `5`) |
+| `GITHUB_TOKEN` | Personal access token used for GitHub API calls | Yes |
+| `GITHUB_WEBHOOK_SECRET` | Secret configured on the GitHub webhook | No |
+| `APP_ENV` | `development` or `production` | No |
+| `APP_HOST` | Bind host | No |
+| `APP_PORT` | Bind port | No |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | No |
+| `DATABASE_PATH` | SQLite database file path | No |
+| `WORKER_POLL_INTERVAL` | Seconds between worker polls when no jobs are pending | No |
 
 ### 4. Start the service
 
@@ -80,24 +74,13 @@ Edit `.env` and fill in:
 python -m app.main
 ```
 
-Or with explicit uvicorn options:
+Or:
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The service is now reachable at **http://localhost:8000**.
-On startup the app creates the SQLite database at `DATABASE_PATH` and applies
-pending migrations from `app/migrations/`.
-
----
-
-## Running with Docker Compose
-
-```bash
-cp .env.example .env   # fill in your values
-docker compose up --build
-```
+The service will create the SQLite database at `DATABASE_PATH` on startup and apply pending migrations from `app/migrations/`.
 
 ---
 
@@ -105,10 +88,21 @@ docker compose up --build
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Returns `{"status": "ok"}` — use for liveness probes |
+| `GET` | `/health` | Returns `{"status": "ok"}` |
 | `POST` | `/webhook` | GitHub webhook receiver |
-| `GET` | `/docs` | Interactive Swagger UI |
+| `GET` | `/docs` | Swagger UI |
 | `GET` | `/openapi.json` | OpenAPI schema |
+
+### Configure a GitHub webhook
+
+1. Open your repository settings on GitHub.
+2. Go to `Settings -> Webhooks -> Add webhook`.
+3. Set the payload URL to `http://<your-host>:8000/webhook`.
+4. Set content type to `application/json`.
+5. Set the secret to match `GITHUB_WEBHOOK_SECRET`.
+6. Select the `Pull requests` event.
+
+---
 
 ## Review job schema
 
@@ -122,15 +116,14 @@ The `review_jobs` table stores:
 
 Dedup is enforced with a unique index on `(job_type, repo, pr_number, head_sha)`.
 That prevents repeated webhook deliveries for the same PR head SHA from creating
-duplicate review jobs while still allowing a new job for a new head SHA.
+duplicate review jobs while still allowing a new job when the head SHA changes.
 
-### Configure a GitHub webhook
+## Processing flow
 
-1. Go to your repository → **Settings → Webhooks → Add webhook**.
-2. Set **Payload URL** to `http://<your-host>:8000/webhook`.
-3. Set **Content type** to `application/json`.
-4. Set **Secret** to the value of `GITHUB_WEBHOOK_SECRET` in your `.env`.
-5. Select **Let me select individual events** → tick **Pull requests**.
+Supported `pull_request` webhook events create rows in `review_jobs`.
+The worker polls for the oldest `pending` job, marks it `processing`, fetches
+the pull request from GitHub, posts a placeholder PR comment, and then marks
+the job `completed` or `failed`.
 
 ---
 
@@ -145,44 +138,42 @@ python -m pytest tests/ -v
 
 ## Project structure
 
-```
+```text
 PRahari/
-├── app/
-│   ├── __init__.py
-│   ├── main.py           # FastAPI app & lifespan
-│   ├── config.py         # Settings (pydantic-settings)
-│   ├── logging_config.py # Structured JSON logging
-│   ├── webhook.py        # POST /webhook receiver
-│   ├── queue.py          # asyncio.Queue wrapper
-│   ├── worker.py         # Background worker loop
-│   ├── github_client.py  # GitHub REST API client (stub)
-│   └── reviewer.py       # PR review logic (placeholder)
-├── tests/
-│   ├── test_config.py
-│   ├── test_health.py
-│   └── test_webhook.py
-├── .env.example
-├── .gitignore
-├── docker-compose.yml
-├── Dockerfile
-├── pyproject.toml
-├── requirements.txt
-└── requirements-dev.txt
+|-- app/
+|   |-- __init__.py
+|   |-- config.py
+|   |-- database.py
+|   |-- enqueue.py
+|   |-- github_client.py
+|   |-- logging_config.py
+|   |-- main.py
+|   |-- migrations/
+|   |   `-- 001_create_review_jobs.sql
+|   |-- review_jobs.py
+|   |-- reviewer.py
+|   |-- webhook.py
+|   `-- worker.py
+|-- tests/
+|   |-- test_config.py
+|   |-- test_enqueue.py
+|   |-- test_health.py
+|   |-- test_review_jobs.py
+|   |-- test_webhook.py
+|   `-- test_worker.py
+|-- .env.example
+|-- .gitignore
+|-- docker-compose.yml
+|-- Dockerfile
+|-- pyproject.toml
+|-- requirements.txt
+`-- requirements-dev.txt
 ```
 
 ---
 
-Database-related files added for the durable review job layer:
-
-- `app/database.py`
-- `app/migrations/001_create_review_jobs.sql`
-- `app/review_jobs.py`
-- `tests/test_review_jobs.py`
-
 ## What is not implemented yet
 
-- LLM-based review logic (see `app/reviewer.py`)
-- Inline PR comments via the GitHub Reviews API (see `app/github_client.py`)
-- Durable worker claiming and execution
-- Authentication / multi-tenant support
-
+- OpenAI-powered review generation
+- Richer inline review comments beyond the placeholder PR comment
+- Authentication and multi-tenant support
