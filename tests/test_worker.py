@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import app.reviewer as reviewer
 from app.database import initialize_database
 from app.review_jobs import COMPLETED_STATUS, FAILED_STATUS, ReviewJobRepository
 from app.worker import process_next_job
@@ -14,11 +15,26 @@ class FakeGitHubClient:
     def __init__(self, *, fail_on_comment: bool = False) -> None:
         self.fail_on_comment = fail_on_comment
         self.fetch_calls: list[tuple[str, str, int]] = []
+        self.files_calls: list[tuple[str, str, int]] = []
         self.comment_calls: list[tuple[str, str, int, str]] = []
 
     async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> dict:
         self.fetch_calls.append((owner, repo, pr_number))
-        return {"number": pr_number}
+        return {
+            "number": pr_number,
+            "title": "Add structured PR review summary",
+            "additions": 42,
+            "deletions": 7,
+        }
+
+    async def list_pull_request_files(
+        self, owner: str, repo: str, pr_number: int
+    ) -> list[dict[str, object]]:
+        self.files_calls.append((owner, repo, pr_number))
+        return [
+            {"filename": "app/reviewer.py"},
+            {"filename": "tests/test_reviewer.py"},
+        ]
 
     async def post_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
@@ -47,14 +63,13 @@ async def test_worker_claims_one_pending_job_and_posts_comment(tmp_path: Path) -
     assert processed.job_id == job.job_id
     assert processed.status == COMPLETED_STATUS
     assert client.fetch_calls == [("AjayvirS", "PRahari", 14)]
-    assert client.comment_calls == [
-        (
-            "AjayvirS",
-            "PRahari",
-            14,
-            "Review pipeline connected successfully for this PR head SHA abc123",
-        )
-    ]
+    assert client.files_calls == [("AjayvirS", "PRahari", 14)]
+    assert len(client.comment_calls) == 1
+    assert client.comment_calls[0][0:3] == ("AjayvirS", "PRahari", 14)
+    assert "PRahari review summary" in client.comment_calls[0][3]
+    assert "Summary" in client.comment_calls[0][3]
+    assert "Potential findings" in client.comment_calls[0][3]
+    assert "Open questions" in client.comment_calls[0][3]
 
 
 @pytest.mark.asyncio
@@ -95,3 +110,32 @@ async def test_worker_does_not_process_same_job_twice(tmp_path: Path) -> None:
     assert first is not None
     assert second is None
     assert len(client.comment_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_worker_uses_placeholder_comment_when_review_generation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "review-jobs.db"
+    initialize_database(str(database_path))
+    repository = ReviewJobRepository(str(database_path))
+    repository.insert_review_job(
+        repo="AjayvirS/PRahari",
+        pr_number=17,
+        head_sha="fallback123",
+    )
+    client = FakeGitHubClient()
+
+    def broken_review(*args: object, **kwargs: object) -> str:
+        raise RuntimeError("review generation failed")
+
+    monkeypatch.setattr(reviewer, "_build_structured_review_comment", broken_review)
+
+    processed = await process_next_job(repository=repository, client=client)
+
+    assert processed is not None
+    assert processed.status == COMPLETED_STATUS
+    assert len(client.comment_calls) == 1
+    assert client.comment_calls[0][3] == (
+        "Review pipeline connected successfully for this PR head SHA fallback123"
+    )

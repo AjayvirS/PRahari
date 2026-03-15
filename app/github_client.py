@@ -30,6 +30,15 @@ class GitHubClient:
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
         )
 
+    async def list_pull_request_files(
+        self, owner: str, repo: str, pr_number: int
+    ) -> list[dict]:
+        """Fetch the changed files for a pull request."""
+        return await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/files",
+        )
+
     async def post_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
     ) -> dict:
@@ -40,7 +49,7 @@ class GitHubClient:
             json={"body": body},
         )
 
-    async def _request(self, method: str, path: str, **kwargs: object) -> dict:
+    async def _request(self, method: str, path: str, **kwargs: object) -> dict | list[dict]:
         async with httpx.AsyncClient(base_url=_BASE_URL, timeout=30.0) as client:
             response = await client.request(
                 method,
