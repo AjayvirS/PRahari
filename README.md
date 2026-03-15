@@ -68,6 +68,9 @@ Edit `.env` and fill in:
 | `DATABASE_PATH` | SQLite database file path | No |
 | `WORKER_POLL_INTERVAL` | Seconds between worker polls when no jobs are pending | No |
 
+Only `.env` is loaded at runtime by default. `.env.example` is a template and is
+not used unless you copy it to `.env`.
+
 ### 4. Start the service
 
 ```bash

@@ -23,6 +23,16 @@ logger = get_logger(__name__)
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown."""
     logger.info("app.startup", app_env=settings.app_env)
+    if not settings.github_token:
+        logger.warning(
+            "app.startup.missing_github_token",
+            message="GITHUB_TOKEN is empty. Runtime config is loaded from .env or process env, not .env.example.",
+        )
+    if not settings.github_webhook_secret:
+        logger.warning(
+            "app.startup.missing_webhook_secret",
+            message="GITHUB_WEBHOOK_SECRET is empty. Signature validation is disabled.",
+        )
     initialize_database()
     worker_task = asyncio.create_task(run_worker())
     yield
