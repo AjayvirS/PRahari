@@ -13,6 +13,8 @@ def test_default_settings() -> None:
     assert s.worker_poll_interval == 5
     assert s.log_level == "INFO"
     assert s.database_path == "data/prahari.db"
+    assert s.review_provider == "deterministic"
+    assert s.openai_model == "gpt-4.1-mini"
 
 
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,6 +23,9 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("GITHUB_TOKEN", "tok123")
     monkeypatch.setenv("DATABASE_PATH", "tmp/test.db")
+    monkeypatch.setenv("REVIEW_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1")
 
     s = Settings()
     assert s.app_env == "production"
@@ -28,3 +33,6 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.log_level == "DEBUG"
     assert s.github_token == "tok123"
     assert s.database_path == "tmp/test.db"
+    assert s.review_provider == "openai"
+    assert s.openai_api_key == "openai-secret"
+    assert s.openai_model == "gpt-4.1"

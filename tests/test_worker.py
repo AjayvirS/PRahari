@@ -129,7 +129,7 @@ async def test_worker_uses_placeholder_comment_when_review_generation_fails(
     def broken_review(*args: object, **kwargs: object) -> str:
         raise RuntimeError("review generation failed")
 
-    monkeypatch.setattr(reviewer, "_build_structured_review_comment", broken_review)
+    monkeypatch.setattr(reviewer, "_build_structured_review_sections", broken_review)
 
     processed = await process_next_job(repository=repository, client=client)
 
