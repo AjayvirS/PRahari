@@ -19,7 +19,8 @@ GitHub --> /webhook --> review_jobs (SQLite) --> worker --> GitHub PR comment
 | Review jobs | `app/review_jobs.py` | Review job repository, dedup, claim, complete, and fail transitions |
 | Worker | `app/worker.py` | Claim pending jobs, fetch PR data, post structured summary comments, and mark job status |
 | GitHub client | `app/github_client.py` | GitHub REST API wrapper for pull request fetch and PR comment posting |
-| Reviewer | `app/reviewer.py` | Deterministic top-level review summary generation from PR metadata and changed files |
+| Reviewer | `app/reviewer.py` | Build review inputs, invoke the configured reviewer service, and format fallback comments |
+| Review service | `app/review_service.py` | Dedicated review generator interface and OpenAI-backed implementation |
 | Config | `app/config.py` | `pydantic-settings` based env and `.env` loading |
 | Logging | `app/logging_config.py` | Structured JSON logging via `structlog` |
 
@@ -61,6 +62,11 @@ Edit `.env` and fill in:
 |---|---|---|
 | `GITHUB_TOKEN` | Personal access token used for GitHub API calls | Yes |
 | `GITHUB_WEBHOOK_SECRET` | Secret configured on the GitHub webhook | No |
+| `REVIEW_PROVIDER` | `deterministic` or `openai` | No |
+| `OPENAI_API_KEY` | API key used when `REVIEW_PROVIDER=openai` | Only for OpenAI mode |
+| `OPENAI_MODEL` | OpenAI model name for review generation | No |
+| `OPENAI_BASE_URL` | Base URL for the OpenAI-compatible API | No |
+| `OPENAI_TIMEOUT_SECONDS` | Timeout for OpenAI API calls | No |
 | `APP_ENV` | `development` or `production` | No |
 | `APP_HOST` | Bind host | No |
 | `APP_PORT` | Bind port | No |
@@ -128,6 +134,11 @@ The worker polls for the oldest `pending` job, marks it `processing`, fetches
 the pull request and changed files from GitHub, generates a structured review
 summary comment, and then marks the job `completed` or `failed`.
 
+By default, review generation stays deterministic. Set `REVIEW_PROVIDER=openai`
+and provide `OPENAI_API_KEY` to enable the OpenAI-backed reviewer. If the API
+call fails or returns an invalid payload, PRahari logs the error and falls back
+to the deterministic review summary instead of failing the job.
+
 ---
 
 ## Running tests
@@ -155,6 +166,7 @@ PRahari/
 |   |   `-- 001_create_review_jobs.sql
 |   |-- review_jobs.py
 |   |-- reviewer.py
+|   |-- review_service.py
 |   |-- webhook.py
 |   `-- worker.py
 |-- tests/
@@ -163,6 +175,7 @@ PRahari/
 |   |-- test_health.py
 |   |-- test_review_jobs.py
 |   |-- test_reviewer.py
+|   |-- test_review_service.py
 |   |-- test_webhook.py
 |   `-- test_worker.py
 |-- .env.example
@@ -178,6 +191,6 @@ PRahari/
 
 ## What is not implemented yet
 
-- OpenAI-powered review generation
+- Repository-local prompt files and richer review policy controls
 - Richer inline review comments beyond the top-level structured summary
 - Authentication and multi-tenant support

@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """All runtime settings for PRahari."""
 
     model_config = SettingsConfigDict(
-        env_file=".env.example",
+        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     # GitHub
     github_token: str = ""
     github_webhook_secret: str = ""
+
+    # Review generation
+    review_provider: str = "deterministic"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_timeout_seconds: float = 30.0
 
     # Application
     app_env: str = "development"
