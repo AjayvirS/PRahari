@@ -7,6 +7,7 @@ from app.config import settings
 from app.github_client import GitHubClient, github_client
 from app.logging_config import get_logger
 from app.review_jobs import ReviewJob, ReviewJobRepository
+from app.reviewer import build_review_comment
 
 logger = get_logger(__name__)
 
@@ -17,7 +18,7 @@ async def process_review_job(
     repository: ReviewJobRepository | None = None,
     client: GitHubClient | None = None,
 ) -> ReviewJob:
-    """Fetch the PR and post a placeholder comment for a claimed review job."""
+    """Fetch the PR and post a review summary comment for a claimed review job."""
     review_jobs = repository or ReviewJobRepository()
     github = client or github_client
     owner, repo_name = _split_repo(job.repo)
@@ -31,12 +32,18 @@ async def process_review_job(
     )
 
     try:
-        await github.get_pull_request(owner, repo_name, job.pr_number)
+        pull_request = await github.get_pull_request(owner, repo_name, job.pr_number)
+        changed_files = await github.list_pull_request_files(owner, repo_name, job.pr_number)
+        comment_body = build_review_comment(
+            pull_request,
+            changed_files,
+            head_sha=job.head_sha,
+        )
         await github.post_issue_comment(
             owner,
             repo_name,
             job.pr_number,
-            f"Review pipeline connected successfully for this PR head SHA {job.head_sha}",
+            comment_body,
         )
         completed_job = review_jobs.mark_job_completed(job.job_id)
         logger.info(

@@ -5,7 +5,6 @@ __pycache__/
 .Python
 .env
 .idea/
-.env.example
 *.egg-info/
 dist/
 build/
