@@ -17,9 +17,9 @@ GitHub --> /webhook --> review_jobs (SQLite) --> worker --> GitHub PR comment
 | Enqueue layer | `app/enqueue.py` | Convert supported PR events into review jobs with dedup handling |
 | Database | `app/database.py` | SQLite setup and migration runner |
 | Review jobs | `app/review_jobs.py` | Review job repository, dedup, claim, complete, and fail transitions |
-| Worker | `app/worker.py` | Claim pending jobs, fetch PR data, post placeholder comments, and mark job status |
+| Worker | `app/worker.py` | Claim pending jobs, fetch PR data, post structured summary comments, and mark job status |
 | GitHub client | `app/github_client.py` | GitHub REST API wrapper for pull request fetch and PR comment posting |
-| Reviewer | `app/reviewer.py` | Placeholder for future review generation logic |
+| Reviewer | `app/reviewer.py` | Deterministic top-level review summary generation from PR metadata and changed files |
 | Config | `app/config.py` | `pydantic-settings` based env and `.env` loading |
 | Logging | `app/logging_config.py` | Structured JSON logging via `structlog` |
 
@@ -67,6 +67,9 @@ Edit `.env` and fill in:
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | No |
 | `DATABASE_PATH` | SQLite database file path | No |
 | `WORKER_POLL_INTERVAL` | Seconds between worker polls when no jobs are pending | No |
+
+Only `.env` is loaded at runtime by default. `.env.example` is a template and is
+not used unless you copy it to `.env`.
 
 ### 4. Start the service
 
@@ -122,8 +125,8 @@ duplicate review jobs while still allowing a new job when the head SHA changes.
 
 Supported `pull_request` webhook events create rows in `review_jobs`.
 The worker polls for the oldest `pending` job, marks it `processing`, fetches
-the pull request from GitHub, posts a placeholder PR comment, and then marks
-the job `completed` or `failed`.
+the pull request and changed files from GitHub, generates a structured review
+summary comment, and then marks the job `completed` or `failed`.
 
 ---
 
@@ -159,6 +162,7 @@ PRahari/
 |   |-- test_enqueue.py
 |   |-- test_health.py
 |   |-- test_review_jobs.py
+|   |-- test_reviewer.py
 |   |-- test_webhook.py
 |   `-- test_worker.py
 |-- .env.example
@@ -175,5 +179,5 @@ PRahari/
 ## What is not implemented yet
 
 - OpenAI-powered review generation
-- Richer inline review comments beyond the placeholder PR comment
+- Richer inline review comments beyond the top-level structured summary
 - Authentication and multi-tenant support
