@@ -34,7 +34,7 @@ async def process_review_job(
     try:
         pull_request = await github.get_pull_request(owner, repo_name, job.pr_number)
         changed_files = await github.list_pull_request_files(owner, repo_name, job.pr_number)
-        comment_body = build_review_comment(
+        comment_body = await build_review_comment(
             pull_request,
             changed_files,
             head_sha=job.head_sha,

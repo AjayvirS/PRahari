@@ -19,6 +19,7 @@ def _make_signature(payload: bytes, secret: str) -> str:
 
 @pytest.mark.asyncio
 async def test_webhook_ignores_non_pr_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", "")
     enqueue_mock = Mock(return_value={"status": "ignored"})
     monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
 
@@ -38,6 +39,7 @@ async def test_webhook_ignores_non_pr_event(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.asyncio
 async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", "")
     payload = {
         "action": "opened",
         "number": 42,
@@ -93,6 +95,7 @@ async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -
 
 @pytest.mark.asyncio
 async def test_webhook_queues_pr_synchronize_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", "")
     payload = {
         "action": "synchronize",
         "number": 7,
@@ -118,6 +121,7 @@ async def test_webhook_queues_pr_synchronize_event(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_webhook_queues_pr_reopened_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", "")
     payload = {
         "action": "reopened",
         "number": 9,
@@ -143,6 +147,7 @@ async def test_webhook_queues_pr_reopened_event(monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.asyncio
 async def test_webhook_ignores_pr_closed_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wh.settings, "github_webhook_secret", "")
     payload = {"action": "closed", "number": 1, "repository": {"full_name": "org/repo"}}
     enqueue_mock = Mock(return_value={"status": "ignored"})
     monkeypatch.setattr(wh, "enqueue_pull_request_event", enqueue_mock)
