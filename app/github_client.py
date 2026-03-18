@@ -30,6 +30,13 @@ class GitHubClient:
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
         )
 
+    async def get_authenticated_user(self) -> dict:
+        """Fetch the authenticated GitHub user for the configured token."""
+        return await self._request(
+            "GET",
+            "/user",
+        )
+
     async def list_pull_request_files(
         self, owner: str, repo: str, pr_number: int
     ) -> list[dict]:
@@ -49,7 +56,7 @@ class GitHubClient:
             json={"body": body},
         )
 
-    async def list_issue_comments(
+    async def get_issue_comments(
         self, owner: str, repo: str, issue_number: int
     ) -> list[dict]:
         """List issue comments for a pull request."""
