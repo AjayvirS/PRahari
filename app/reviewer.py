@@ -13,6 +13,8 @@ from app.review_service import (
 )
 
 logger = get_logger(__name__)
+REVIEW_MARKER_PREFIX = "<!-- prahari:review head_sha="
+REVIEW_MARKER_SUFFIX = " -->"
 
 
 async def build_review_comment(
@@ -29,7 +31,10 @@ async def build_review_comment(
     if review_generator is not None:
         try:
             generated = await review_generator.generate(review_input)
-            return _format_review_comment(generated)
+            return append_review_comment_marker(
+                _format_review_comment(generated),
+                head_sha,
+            )
         except Exception:
             logger.exception(
                 "reviewer.build_review_comment.generator_failed",
@@ -39,7 +44,10 @@ async def build_review_comment(
 
     try:
         generated = _build_structured_review_sections(review_input)
-        return _format_review_comment(generated)
+        return append_review_comment_marker(
+            _format_review_comment(generated),
+            head_sha,
+        )
     except Exception:
         logger.exception(
             "reviewer.build_review_comment.fallback_failed",
@@ -51,7 +59,10 @@ async def build_review_comment(
 
 def build_placeholder_review_comment(head_sha: str) -> str:
     """Return the placeholder comment body."""
-    return f"Review pipeline connected successfully for this PR head SHA {head_sha}"
+    return (
+        f"Review pipeline connected successfully for this PR head SHA {head_sha}\n\n"
+        f"{build_review_comment_marker(head_sha)}"
+    )
 
 
 def _build_review_input(
@@ -104,6 +115,21 @@ def _format_review_comment(sections: ReviewSections) -> str:
     lines.extend(_format_section("Potential findings", sections.findings))
     lines.extend(_format_section("Open questions", sections.open_questions))
     return "\n".join(lines)
+
+
+def append_review_comment_marker(comment_body: str, head_sha: str) -> str:
+    """Append a stable hidden marker that identifies the reviewed PR head SHA."""
+    return f"{comment_body}\n\n{build_review_comment_marker(head_sha)}"
+
+
+def build_review_comment_marker(head_sha: str) -> str:
+    """Return the hidden marker embedded in posted review comments."""
+    return f"{REVIEW_MARKER_PREFIX}{head_sha}{REVIEW_MARKER_SUFFIX}"
+
+
+def comment_reviews_head_sha(comment_body: str, head_sha: str) -> bool:
+    """Return True when a comment body contains the marker for the given SHA."""
+    return build_review_comment_marker(head_sha) in comment_body
 
 
 def _format_section(title: str, items: list[str]) -> list[str]:
