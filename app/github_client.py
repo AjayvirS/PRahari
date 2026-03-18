@@ -49,6 +49,16 @@ class GitHubClient:
             json={"body": body},
         )
 
+    async def list_issue_comments(
+        self, owner: str, repo: str, issue_number: int
+    ) -> list[dict]:
+        """List issue comments for a pull request."""
+        return await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            params={"per_page": 100},
+        )
+
     async def _request(self, method: str, path: str, **kwargs: object) -> dict | list[dict]:
         async with httpx.AsyncClient(base_url=_BASE_URL, timeout=30.0) as client:
             response = await client.request(

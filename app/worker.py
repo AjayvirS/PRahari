@@ -7,7 +7,7 @@ from app.config import settings
 from app.github_client import GitHubClient, github_client
 from app.logging_config import get_logger
 from app.review_jobs import ReviewJob, ReviewJobRepository
-from app.reviewer import build_review_comment
+from app.reviewer import build_review_comment, comment_reviews_head_sha
 
 logger = get_logger(__name__)
 
@@ -33,6 +33,18 @@ async def process_review_job(
 
     try:
         pull_request = await github.get_pull_request(owner, repo_name, job.pr_number)
+        existing_comments = await github.list_issue_comments(owner, repo_name, job.pr_number)
+        if _has_existing_review_for_sha(existing_comments, job.head_sha):
+            completed_job = review_jobs.mark_job_completed(job.job_id)
+            logger.info(
+                "worker.process_job.skipped_duplicate_review",
+                job_id=job.job_id,
+                repo=job.repo,
+                pr_number=job.pr_number,
+                head_sha=job.head_sha,
+            )
+            return completed_job
+
         changed_files = await github.list_pull_request_files(owner, repo_name, job.pr_number)
         comment_body = await build_review_comment(
             pull_request,
@@ -102,4 +114,17 @@ async def run_worker(
 def _split_repo(full_name: str) -> tuple[str, str]:
     owner, repo_name = full_name.split("/", maxsplit=1)
     return owner, repo_name
+
+
+def _has_existing_review_for_sha(comments: list[dict], head_sha: str) -> bool:
+    for comment in comments:
+        user = comment.get("user") or {}
+        if user.get("type") != "Bot":
+            continue
+
+        body = str(comment.get("body") or "")
+        if comment_reviews_head_sha(body, head_sha):
+            return True
+
+    return False
 
