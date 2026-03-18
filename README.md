@@ -20,6 +20,7 @@ GitHub --> /webhook --> review_jobs (SQLite) --> worker --> GitHub PR comment
 | Worker | `app/worker.py` | Claim pending jobs, fetch PR data, post structured summary comments, and mark job status |
 | GitHub client | `app/github_client.py` | GitHub REST API wrapper for pull request fetch and PR comment posting |
 | Reviewer | `app/reviewer.py` | Build review inputs, invoke the configured reviewer service, and format fallback comments |
+| Reviewer identity | `app/reviewer_identity.py` | Resolve the configured reviewer login for duplicate comment checks |
 | Review service | `app/review_service.py` | Dedicated review generator interface and OpenAI-backed implementation |
 | Config | `app/config.py` | `pydantic-settings` based env and `.env` loading |
 | Logging | `app/logging_config.py` | Structured JSON logging via `structlog` |
@@ -62,6 +63,7 @@ Edit `.env` and fill in:
 |---|---|---|
 | `GITHUB_TOKEN` | Personal access token used for GitHub API calls | Yes |
 | `GITHUB_WEBHOOK_SECRET` | Secret configured on the GitHub webhook | No |
+| `GITHUB_REVIEWER_LOGIN` | GitHub login expected to author PRahari review comments | No |
 | `REVIEW_PROVIDER` | `deterministic` or `openai` | No |
 | `OPENAI_API_KEY` | API key used when `REVIEW_PROVIDER=openai` | Only for OpenAI mode |
 | `OPENAI_MODEL` | OpenAI model name for review generation | No |
@@ -166,6 +168,7 @@ PRahari/
 |   |   `-- 001_create_review_jobs.sql
 |   |-- review_jobs.py
 |   |-- reviewer.py
+|   |-- reviewer_identity.py
 |   |-- review_service.py
 |   |-- webhook.py
 |   `-- worker.py
@@ -175,6 +178,7 @@ PRahari/
 |   |-- test_health.py
 |   |-- test_review_jobs.py
 |   |-- test_reviewer.py
+|   |-- test_reviewer_identity.py
 |   |-- test_review_service.py
 |   |-- test_webhook.py
 |   `-- test_worker.py

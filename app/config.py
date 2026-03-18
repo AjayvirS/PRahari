@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # GitHub
     github_token: str = ""
     github_webhook_secret: str = ""
+    github_reviewer_login: str = ""
 
     # Review generation
     review_provider: str = "deterministic"
