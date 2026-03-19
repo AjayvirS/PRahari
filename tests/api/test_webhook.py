@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import app.webhook as wh
+import app.api.webhook as wh
 from app.main import app
 
 
@@ -82,15 +82,18 @@ async def test_webhook_queues_pr_opened_event(monkeypatch: pytest.MonkeyPatch) -
             "supported": True,
         }
     )
-    assert ("webhook.received", {
-        "delivery_id": "delivery-123",
-        "github_event": "pull_request",
-        "action": "opened",
-        "repo": "org/repo",
-        "pr_number": 42,
-        "head_sha": "abc123",
-        "supported": True,
-    }) in log_calls
+    assert (
+        "webhook.received",
+        {
+            "delivery_id": "delivery-123",
+            "github_event": "pull_request",
+            "action": "opened",
+            "repo": "org/repo",
+            "pr_number": 42,
+            "head_sha": "abc123",
+            "supported": True,
+        },
+    ) in log_calls
 
 
 @pytest.mark.asyncio

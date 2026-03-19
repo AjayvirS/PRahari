@@ -1,9 +1,4 @@
-"""Webhook receiver endpoint.
-
-GitHub sends events here. The endpoint validates the HMAC signature,
-extracts normalized metadata, logs key fields, and accepts only supported
-pull request events for downstream processing.
-"""
+"""Webhook receiver endpoint."""
 from __future__ import annotations
 
 import hashlib
@@ -12,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
-from app.enqueue import enqueue_pull_request_event
+from app.business.enqueue import enqueue_pull_request_event
 from app.config import settings
 from app.logging_config import get_logger
 
@@ -23,14 +18,9 @@ SUPPORTED_PR_ACTIONS = {"opened", "synchronize", "reopened"}
 
 
 def _verify_signature(payload: bytes, signature_header: str | None) -> None:
-    """Verify the GitHub webhook HMAC-SHA256 signature.
-
-    Raises:
-        HTTPException: 401 if the signature is missing or invalid.
-    """
+    """Verify the GitHub webhook HMAC-SHA256 signature."""
     secret = settings.github_webhook_secret
     if not secret:
-        # Skip verification when no secret is configured (dev mode).
         return
 
     if not signature_header:
@@ -80,15 +70,7 @@ async def receive_webhook(
     x_github_delivery: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    """Receive a GitHub webhook event and accept supported PR events.
-
-    Only ``pull_request`` events with an ``opened``, ``reopened``, or
-    ``synchronize`` action are accepted for downstream processing; all others
-    are acknowledged and ignored.
-
-    Returns:
-        A JSON object with a ``status`` field.
-    """
+    """Receive a GitHub webhook event and accept supported PR events."""
     payload_bytes = await request.body()
     _verify_signature(payload_bytes, x_hub_signature_256)
 
@@ -110,5 +92,4 @@ async def receive_webhook(
         supported=metadata["supported"],
     )
 
-    result = enqueue_pull_request_event(metadata)
-    return result
+    return enqueue_pull_request_event(metadata)

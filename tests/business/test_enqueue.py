@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.database import initialize_database
-from app.enqueue import enqueue_pull_request_event
-from app.review_jobs import ReviewJobRepository
+from app.business.enqueue import enqueue_pull_request_event
+from app.database.connection import initialize_database
+from app.database.review_jobs import ReviewJobRepository
 
 
 def test_supported_pr_event_creates_review_job(tmp_path: Path) -> None:
@@ -55,4 +55,3 @@ def test_duplicate_delivery_does_not_create_duplicate_job(tmp_path: Path) -> Non
     assert first["status"] == "queued"
     assert second["status"] == "duplicate"
     assert len(repository.list_jobs()) == 1
-

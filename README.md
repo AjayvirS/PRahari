@@ -1,4 +1,4 @@
-﻿# PRahari
+# PRahari
 
 A webhook-driven service for durable pull request review processing.
 
@@ -10,18 +10,14 @@ A webhook-driven service for durable pull request review processing.
 GitHub --> /webhook --> review_jobs (SQLite) --> worker --> GitHub PR comment
 ```
 
-| Module | Path | Responsibility |
+| Layer | Path | Responsibility |
 |---|---|---|
-| Web app and health | `app/main.py` | FastAPI app, `/health`, startup, shutdown |
-| Webhook receiver | `app/webhook.py` | Validate GitHub signatures, parse PR events, and route them into durable jobs |
-| Enqueue layer | `app/enqueue.py` | Convert supported PR events into review jobs with dedup handling |
-| Database | `app/database.py` | SQLite setup and migration runner |
-| Review jobs | `app/review_jobs.py` | Review job repository, dedup, claim, complete, and fail transitions |
-| Worker | `app/worker.py` | Claim pending jobs, fetch PR data, post structured summary comments, and mark job status |
-| GitHub client | `app/github_client.py` | GitHub REST API wrapper for pull request fetch and PR comment posting |
-| Reviewer | `app/reviewer.py` | Build review inputs, invoke the configured reviewer service, and format fallback comments |
-| Review service | `app/review_service.py` | Dedicated review generator interface and OpenAI-backed implementation |
-| Config | `app/config.py` | `pydantic-settings` based env and `.env` loading |
+| API | `app/api/` | FastAPI route handlers and request validation |
+| Business | `app/business/` | Enqueue logic, review orchestration, reviewer identity, and worker flow |
+| Services | `app/services/` | GitHub API access and OpenAI-backed review generation |
+| Database | `app/database/` | SQLite connections, migrations, and review job persistence |
+| App bootstrap | `app/main.py` | FastAPI app startup, `/health`, and worker lifecycle |
+| Config | `app/config.py` | `pydantic-settings` based env loading |
 | Logging | `app/logging_config.py` | Structured JSON logging via `structlog` |
 
 ---
@@ -89,7 +85,8 @@ Or:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The service will create the SQLite database at `DATABASE_PATH` on startup and apply pending migrations from `app/migrations/`.
+The service creates the SQLite database at `DATABASE_PATH` on startup and applies
+pending migrations from `app/database/migrations/`.
 
 ---
 
@@ -131,13 +128,17 @@ duplicate review jobs while still allowing a new job when the head SHA changes.
 
 Supported `pull_request` webhook events create rows in `review_jobs`.
 The worker polls for the oldest `pending` job, marks it `processing`, fetches
-the pull request and changed files from GitHub, generates a structured review
-summary comment, and then marks the job `completed` or `failed`.
+the pull request and changed files from GitHub, checks for an existing review
+comment from the authenticated reviewer for the same SHA, generates a structured
+review summary comment, and then marks the job `completed` or `failed`.
 
 By default, review generation stays deterministic. Set `REVIEW_PROVIDER=openai`
 and provide `OPENAI_API_KEY` to enable the OpenAI-backed reviewer. If the API
 call fails or returns an invalid payload, PRahari logs the error and falls back
 to the deterministic review summary instead of failing the job.
+
+Reviewer identity for duplicate comment suppression is derived from the
+authenticated GitHub user behind `GITHUB_TOKEN`.
 
 ---
 
@@ -155,29 +156,31 @@ python -m pytest tests/ -v
 ```text
 PRahari/
 |-- app/
+|   |-- api/
+|   |   `-- webhook.py
+|   |-- business/
+|   |   |-- enqueue.py
+|   |   |-- reviewer.py
+|   |   |-- reviewer_identity.py
+|   |   `-- worker.py
+|   |-- database/
+|   |   |-- migrations/
+|   |   |   `-- 001_create_review_jobs.sql
+|   |   |-- connection.py
+|   |   `-- review_jobs.py
+|   |-- services/
+|   |   |-- github_client.py
+|   |   `-- review_service.py
 |   |-- __init__.py
 |   |-- config.py
-|   |-- database.py
-|   |-- enqueue.py
-|   |-- github_client.py
 |   |-- logging_config.py
-|   |-- main.py
-|   |-- migrations/
-|   |   `-- 001_create_review_jobs.sql
-|   |-- review_jobs.py
-|   |-- reviewer.py
-|   |-- review_service.py
-|   |-- webhook.py
-|   `-- worker.py
+|   `-- main.py
 |-- tests/
-|   |-- test_config.py
-|   |-- test_enqueue.py
-|   |-- test_health.py
-|   |-- test_review_jobs.py
-|   |-- test_reviewer.py
-|   |-- test_review_service.py
-|   |-- test_webhook.py
-|   `-- test_worker.py
+|   |-- api/
+|   |-- business/
+|   |-- config/
+|   |-- database/
+|   `-- services/
 |-- .env.example
 |-- .gitignore
 |-- docker-compose.yml
