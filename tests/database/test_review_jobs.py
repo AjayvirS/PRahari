@@ -4,8 +4,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from app.database import initialize_database
-from app.review_jobs import (
+from app.database.connection import initialize_database
+from app.database.review_jobs import (
     COMPLETED_STATUS,
     FAILED_STATUS,
     PENDING_STATUS,
@@ -17,7 +17,6 @@ from app.review_jobs import (
 
 def test_initialize_database_creates_review_job_schema(tmp_path: Path) -> None:
     database_path = tmp_path / "review-jobs.db"
-
     initialize_database(str(database_path))
 
     assert database_path.exists()
@@ -169,4 +168,3 @@ def test_completed_and_failed_jobs_are_marked_terminally(tmp_path: Path) -> None
     assert failed.failed_at is not None
     assert failed.last_error == "boom"
     assert failed.retry_count == 1
-

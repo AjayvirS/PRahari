@@ -58,4 +58,3 @@ def initialize_database(database_path: str | None = None) -> None:
             )
 
         connection.commit()
-

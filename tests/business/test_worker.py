@@ -5,15 +5,16 @@ from pathlib import Path
 
 import pytest
 
-import app.reviewer as reviewer
-from app.database import initialize_database
-from app.review_jobs import COMPLETED_STATUS, FAILED_STATUS, ReviewJobRepository
-from app.reviewer import build_review_comment_marker
-from app.reviewer_identity import ReviewerIdentityProvider
-from app.worker import process_next_job
+import app.business.reviewer as reviewer
+from app.business.reviewer import build_review_comment_marker
+from app.business.reviewer_identity import ReviewerIdentityProvider
+from app.business.worker import process_next_job
+from app.database.connection import initialize_database
+from app.database.review_jobs import COMPLETED_STATUS, FAILED_STATUS, ReviewJobRepository
+from app.services.github_client import Client, JsonDict, JsonList
 
 
-class FakeGitHubClient:
+class FakeGitHubClient(Client):
     def __init__(
         self,
         *,
@@ -30,7 +31,7 @@ class FakeGitHubClient:
         self.files_calls: list[tuple[str, str, int]] = []
         self.comment_calls: list[tuple[str, str, int, str]] = []
 
-    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> dict:
+    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> JsonDict:
         self.fetch_calls.append((owner, repo, pr_number))
         return {
             "number": pr_number,
@@ -41,7 +42,7 @@ class FakeGitHubClient:
 
     async def list_pull_request_files(
         self, owner: str, repo: str, pr_number: int
-    ) -> list[dict[str, object]]:
+    ) -> JsonList:
         self.files_calls.append((owner, repo, pr_number))
         return [
             {"filename": "app/reviewer.py"},
@@ -50,17 +51,17 @@ class FakeGitHubClient:
 
     async def get_issue_comments(
         self, owner: str, repo: str, issue_number: int
-    ) -> list[dict[str, object]]:
+    ) -> JsonList:
         self.comments_fetch_calls.append((owner, repo, issue_number))
         return self.existing_comments
 
-    async def get_authenticated_user(self) -> dict[str, object]:
+    async def get_authenticated_user(self) -> JsonDict:
         self.auth_calls += 1
         return {"login": self.authenticated_login}
 
     async def post_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
-    ) -> dict:
+    ) -> JsonDict:
         self.comment_calls.append((owner, repo, issue_number, body))
         if self.fail_on_comment:
             raise RuntimeError("comment failed")
@@ -164,12 +165,12 @@ async def test_worker_skips_generation_when_duplicate_review_comment_exists(
     async def broken_review(*args: object, **kwargs: object) -> str:
         raise AssertionError("review generation should be skipped for duplicates")
 
-    monkeypatch.setattr("app.worker.build_review_comment", broken_review)
+    monkeypatch.setattr("app.business.worker.build_review_comment", broken_review)
 
     processed = await process_next_job(
         repository=repository,
         client=client,
-        identity_provider=ReviewerIdentityProvider(configured_login="prahari-bot"),
+        identity_provider=ReviewerIdentityProvider(),
     )
 
     assert processed is not None
@@ -177,7 +178,7 @@ async def test_worker_skips_generation_when_duplicate_review_comment_exists(
     assert processed.status == COMPLETED_STATUS
     assert client.fetch_calls == [("AjayvirS", "PRahari", 18)]
     assert client.comments_fetch_calls == [("AjayvirS", "PRahari", 18)]
-    assert client.auth_calls == 0
+    assert client.auth_calls == 1
     assert client.files_calls == []
     assert client.comment_calls == []
 
@@ -206,11 +207,7 @@ async def test_worker_does_not_skip_when_marker_matches_but_login_does_not(
         ]
     )
 
-    processed = await process_next_job(
-        repository=repository,
-        client=client,
-        identity_provider=ReviewerIdentityProvider(configured_login="prahari-bot"),
-    )
+    processed = await process_next_job(repository=repository, client=client)
 
     assert processed is not None
     assert processed.status == COMPLETED_STATUS

@@ -9,11 +9,11 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.api.webhook import router as webhook_router
+from app.business.worker import run_worker
 from app.config import settings
-from app.database import initialize_database
+from app.database.connection import initialize_database
 from app.logging_config import configure_logging, get_logger
-from app.webhook import router as webhook_router
-from app.worker import run_worker
 
 configure_logging(settings.log_level)
 logger = get_logger(__name__)
@@ -49,15 +49,12 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
-    # ── Health endpoint ────────────────────────────────────────────────────────
     @app.get("/health", tags=["ops"])
     async def health() -> JSONResponse:
         """Return service health status."""
         return JSONResponse({"status": "ok"})
 
-    # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(webhook_router, tags=["webhook"])
-
     return app
 
 

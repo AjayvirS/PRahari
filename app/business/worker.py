@@ -4,11 +4,12 @@ from __future__ import annotations
 import asyncio
 
 from app.config import settings
-from app.github_client import GitHubClient, github_client
+from app.database.review_jobs import ReviewJob, ReviewJobRepository
 from app.logging_config import get_logger
-from app.review_jobs import ReviewJob, ReviewJobRepository
-from app.reviewer_identity import ReviewerIdentityProvider
-from app.reviewer import build_review_comment, comment_reviews_head_sha
+from app.services.github_client import Client, github_client
+
+from .reviewer import build_review_comment, comment_reviews_head_sha
+from .reviewer_identity import ReviewerIdentityProvider
 
 logger = get_logger(__name__)
 
@@ -17,7 +18,7 @@ async def process_review_job(
     job: ReviewJob,
     *,
     repository: ReviewJobRepository | None = None,
-    client: GitHubClient | None = None,
+    client: Client | None = None,
     identity_provider: ReviewerIdentityProvider | None = None,
 ) -> ReviewJob:
     """Fetch the PR and post a review summary comment for a claimed review job."""
@@ -68,12 +69,7 @@ async def process_review_job(
             changed_files,
             head_sha=job.head_sha,
         )
-        await github.post_issue_comment(
-            owner,
-            repo_name,
-            job.pr_number,
-            comment_body,
-        )
+        await github.post_issue_comment(owner, repo_name, job.pr_number, comment_body)
         completed_job = review_jobs.mark_job_completed(job.job_id)
         logger.info(
             "worker.process_job.completed",
@@ -96,7 +92,7 @@ async def process_review_job(
 async def process_next_job(
     *,
     repository: ReviewJobRepository | None = None,
-    client: GitHubClient | None = None,
+    client: Client | None = None,
     identity_provider: ReviewerIdentityProvider | None = None,
 ) -> ReviewJob | None:
     """Claim and process a single pending review job, if one exists."""
@@ -116,7 +112,7 @@ async def process_next_job(
 async def run_worker(
     *,
     repository: ReviewJobRepository | None = None,
-    client: GitHubClient | None = None,
+    client: Client | None = None,
     identity_provider: ReviewerIdentityProvider | None = None,
 ) -> None:
     """Poll the database for pending review jobs and process them serially."""
@@ -152,8 +148,7 @@ def _has_existing_review_for_sha(
 ) -> bool:
     for comment in comments:
         user = comment.get("user") or {}
-        login = str(user.get("login") or "")
-        if login != reviewer_login:
+        if str(user.get("login") or "") != reviewer_login:
             continue
 
         body = str(comment.get("body") or "")
@@ -161,4 +156,3 @@ def _has_existing_review_for_sha(
             return True
 
     return False
-

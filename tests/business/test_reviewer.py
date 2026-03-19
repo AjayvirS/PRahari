@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-import app.reviewer as reviewer
-from app.review_service import ReviewGenerationError, ReviewSections
+import app.business.reviewer as reviewer
+from app.services.review_service import ReviewGenerationError, ReviewSections
 
 
 class FakeGenerator:
@@ -23,21 +23,18 @@ class BrokenGenerator:
 
 @pytest.mark.asyncio
 async def test_build_review_comment_formats_structured_summary() -> None:
-    pull_request = {
-        "number": 18,
-        "title": "Add structured review summaries",
-        "additions": 24,
-        "deletions": 5,
-    }
-    changed_files = [
-        {"filename": "app/reviewer.py"},
-        {"filename": "app/worker.py"},
-        {"filename": "tests/test_reviewer.py"},
-    ]
-
     comment = await reviewer.build_review_comment(
-        pull_request,
-        changed_files,
+        {
+            "number": 18,
+            "title": "Add structured review summaries",
+            "additions": 24,
+            "deletions": 5,
+        },
+        [
+            {"filename": "app/reviewer.py"},
+            {"filename": "app/worker.py"},
+            {"filename": "tests/test_reviewer.py"},
+        ],
         head_sha="abc123",
     )
 
