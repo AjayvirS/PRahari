@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Any
 
 from app.logging_config import get_logger
-from app.review_service import (
+from app.services.review_service import (
     ReviewGenerator,
     ReviewInput,
     ReviewSections,
@@ -31,10 +31,7 @@ async def build_review_comment(
     if review_generator is not None:
         try:
             generated = await review_generator.generate(review_input)
-            return append_review_comment_marker(
-                _format_review_comment(generated),
-                head_sha,
-            )
+            return append_review_comment_marker(_format_review_comment(generated), head_sha)
         except Exception:
             logger.exception(
                 "reviewer.build_review_comment.generator_failed",
@@ -44,10 +41,7 @@ async def build_review_comment(
 
     try:
         generated = _build_structured_review_sections(review_input)
-        return append_review_comment_marker(
-            _format_review_comment(generated),
-            head_sha,
-        )
+        return append_review_comment_marker(_format_review_comment(generated), head_sha)
     except Exception:
         logger.exception(
             "reviewer.build_review_comment.fallback_failed",
@@ -63,6 +57,21 @@ def build_placeholder_review_comment(head_sha: str) -> str:
         f"Review pipeline connected successfully for this PR head SHA {head_sha}\n\n"
         f"{build_review_comment_marker(head_sha)}"
     )
+
+
+def append_review_comment_marker(comment_body: str, head_sha: str) -> str:
+    """Append a stable hidden marker that identifies the reviewed PR head SHA."""
+    return f"{comment_body}\n\n{build_review_comment_marker(head_sha)}"
+
+
+def build_review_comment_marker(head_sha: str) -> str:
+    """Return the hidden marker embedded in posted review comments."""
+    return f"{REVIEW_MARKER_PREFIX}{head_sha}{REVIEW_MARKER_SUFFIX}"
+
+
+def comment_reviews_head_sha(comment_body: str, head_sha: str) -> bool:
+    """Return True when a comment body contains the marker for the given SHA."""
+    return build_review_comment_marker(head_sha) in comment_body
 
 
 def _build_review_input(
@@ -98,11 +107,7 @@ def _build_structured_review_sections(review_input: ReviewInput) -> ReviewSectio
     if areas:
         summary = f"{summary} Primary areas: {areas}."
 
-    return ReviewSections(
-        summary=summary,
-        findings=findings,
-        open_questions=questions,
-    )
+    return ReviewSections(summary=summary, findings=findings, open_questions=questions)
 
 
 def _format_review_comment(sections: ReviewSections) -> str:
@@ -115,21 +120,6 @@ def _format_review_comment(sections: ReviewSections) -> str:
     lines.extend(_format_section("Potential findings", sections.findings))
     lines.extend(_format_section("Open questions", sections.open_questions))
     return "\n".join(lines)
-
-
-def append_review_comment_marker(comment_body: str, head_sha: str) -> str:
-    """Append a stable hidden marker that identifies the reviewed PR head SHA."""
-    return f"{comment_body}\n\n{build_review_comment_marker(head_sha)}"
-
-
-def build_review_comment_marker(head_sha: str) -> str:
-    """Return the hidden marker embedded in posted review comments."""
-    return f"{REVIEW_MARKER_PREFIX}{head_sha}{REVIEW_MARKER_SUFFIX}"
-
-
-def comment_reviews_head_sha(comment_body: str, head_sha: str) -> bool:
-    """Return True when a comment body contains the marker for the given SHA."""
-    return build_review_comment_marker(head_sha) in comment_body
 
 
 def _format_section(title: str, items: list[str]) -> list[str]:
@@ -146,14 +136,10 @@ def _summarize_areas(changed_files: list[str]) -> str:
     for filename in changed_files:
         parts = filename.split("/", maxsplit=1)
         areas.append(parts[0] if len(parts) > 1 else filename)
-
-    most_common = [name for name, _ in Counter(areas).most_common(3)]
-    return ", ".join(most_common)
+    return ", ".join(name for name, _ in Counter(areas).most_common(3))
 
 
-def _derive_findings(
-    changed_files: list[str], additions: int, file_count: int
-) -> list[str]:
+def _derive_findings(changed_files: list[str], additions: int, file_count: int) -> list[str]:
     findings: list[str] = []
 
     if changed_files and not any("test" in filename.lower() for filename in changed_files):

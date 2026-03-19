@@ -92,14 +92,8 @@ class OpenAIReviewGenerator:
                         "additionalProperties": False,
                         "properties": {
                             "summary": {"type": "string"},
-                            "findings": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "open_questions": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
+                            "findings": {"type": "array", "items": {"type": "string"}},
+                            "open_questions": {"type": "array", "items": {"type": "string"}},
                         },
                         "required": ["summary", "findings", "open_questions"],
                     },

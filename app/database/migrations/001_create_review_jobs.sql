@@ -17,6 +17,3 @@ CREATE TABLE IF NOT EXISTS review_jobs (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_review_jobs_dedup
 ON review_jobs (job_type, repo, pr_number, head_sha);
-
-CREATE INDEX IF NOT EXISTS idx_review_jobs_status_created_at
-ON review_jobs (status, created_at);

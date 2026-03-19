@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-import app.review_service as review_service
-from app.review_service import OpenAIReviewGenerator, ReviewGenerationError, ReviewInput
+import app.services.review_service as review_service
+from app.services.review_service import OpenAIReviewGenerator, ReviewGenerationError, ReviewInput
 
 
 class FakeResponse:
