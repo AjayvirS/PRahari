@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-import app.reviewer as reviewer
-from app.review_service import ReviewGenerationError, ReviewSections
+import app.business.reviewer as reviewer
+from app.services.review_service import ReviewGenerationError, ReviewSections
 
 
 class FakeGenerator:
@@ -23,21 +23,18 @@ class BrokenGenerator:
 
 @pytest.mark.asyncio
 async def test_build_review_comment_formats_structured_summary() -> None:
-    pull_request = {
-        "number": 18,
-        "title": "Add structured review summaries",
-        "additions": 24,
-        "deletions": 5,
-    }
-    changed_files = [
-        {"filename": "app/reviewer.py"},
-        {"filename": "app/worker.py"},
-        {"filename": "tests/test_reviewer.py"},
-    ]
-
     comment = await reviewer.build_review_comment(
-        pull_request,
-        changed_files,
+        {
+            "number": 18,
+            "title": "Add structured review summaries",
+            "additions": 24,
+            "deletions": 5,
+        },
+        [
+            {"filename": "app/reviewer.py"},
+            {"filename": "app/worker.py"},
+            {"filename": "tests/test_reviewer.py"},
+        ],
         head_sha="abc123",
     )
 
@@ -47,6 +44,7 @@ async def test_build_review_comment_formats_structured_summary() -> None:
     assert "\nOpen questions\n" in comment
     assert "Add structured review summaries" in comment
     assert "Primary areas: app, tests." in comment
+    assert reviewer.build_review_comment_marker("abc123") in comment
 
 
 @pytest.mark.asyncio
@@ -61,6 +59,7 @@ async def test_build_review_comment_uses_llm_generator_when_available() -> None:
     assert "LLM summary for Adopt review service" in comment
     assert "Check branch protection coverage." in comment
     assert "Should this be split into smaller commits?" in comment
+    assert reviewer.build_review_comment_marker("llm123") in comment
 
 
 @pytest.mark.asyncio
@@ -93,4 +92,7 @@ async def test_build_review_comment_falls_back_to_placeholder_when_generation_fa
         generator=BrokenGenerator(),
     )
 
-    assert comment == "Review pipeline connected successfully for this PR head SHA fallback-sha"
+    assert comment == (
+        "Review pipeline connected successfully for this PR head SHA fallback-sha\n\n"
+        "<!-- prahari:review head_sha=fallback-sha -->"
+    )

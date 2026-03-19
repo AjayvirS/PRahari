@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 
-from app.database import get_connection
+from .connection import get_connection
 
 REVIEW_JOB_TYPE = "review_pr"
 PENDING_STATUS = "pending"
@@ -209,4 +209,3 @@ def _row_to_review_job(row: sqlite3.Row | None) -> ReviewJob:
         completed_at=row["completed_at"],
         failed_at=row["failed_at"],
     )
-
