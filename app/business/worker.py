@@ -121,18 +121,24 @@ async def run_worker(
     client: Client | None = None,
     identity_provider: ReviewerIdentityProvider | None = None,
 ) -> None:
-    """Poll the database for pending review jobs and process them serially."""
-    logger.info("worker.start", poll_interval=settings.worker_poll_interval)
+    """Poll the database for pending review jobs and process them."""
+    logger.info(
+        "worker.start",
+        poll_interval=settings.worker_poll_interval,
+        concurrency=settings.worker_concurrency,
+    )
+    review_jobs = repository or ReviewJobRepository()
 
     try:
         while True:
-            processed_job = await process_next_job(
-                repository=repository,
+            job = await process_next_job(
+                repository=review_jobs,
                 client=client,
                 identity_provider=identity_provider,
             )
-            if processed_job is None:
+            if job is None:
                 await asyncio.sleep(settings.worker_poll_interval)
+
     except asyncio.CancelledError:
         logger.info("worker.stopped")
         raise

@@ -16,6 +16,17 @@ def enqueue_pull_request_event(
     """Create a durable review job for a supported pull request event."""
     review_jobs = repository or ReviewJobRepository()
 
+    logger.debug(
+        "enqueue.received",
+        delivery_id=metadata.get("delivery_id"),
+        github_event=metadata.get("event_type"),
+        action=metadata.get("action"),
+        repo=metadata.get("repo"),
+        pr_number=metadata.get("pr_number"),
+        head_sha=metadata.get("head_sha"),
+        supported=metadata.get("supported"),
+    )
+
     if not metadata.get("supported"):
         logger.info(
             "enqueue.unsupported_event",
