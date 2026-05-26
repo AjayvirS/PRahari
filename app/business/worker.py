@@ -121,18 +121,34 @@ async def run_worker(
     client: Client | None = None,
     identity_provider: ReviewerIdentityProvider | None = None,
 ) -> None:
-    """Poll the database for pending review jobs and process them serially."""
-    logger.info("worker.start", poll_interval=settings.worker_poll_interval)
+    """Poll the database for pending review jobs and process them concurrently."""
+    logger.info(
+        "worker.start",
+        poll_interval=settings.worker_poll_interval,
+        concurrency=settings.worker_concurrency,
+    )
+    semaphore = asyncio.Semaphore(settings.worker_concurrency)
 
-    try:
-        while True:
-            processed_job = await process_next_job(
+    async def _process_with_semaphore() -> None:
+        async with semaphore:
+            await process_next_job(
                 repository=repository,
                 client=client,
                 identity_provider=identity_provider,
             )
-            if processed_job is None:
+
+    try:
+        while True:
+            # This could be improved with a more sophisticated scheduling mechanism
+            # that combines polling and event-driven triggers. For now, we poll
+            # and spawn concurrent tasks up to the concurrency limit.
+            tasks = [
+                asyncio.create_task(_process_with_semaphore())
+                for _ in range(settings.worker_concurrency - len(asyncio.all_tasks()))
+            ]
+            if not tasks:
                 await asyncio.sleep(settings.worker_poll_interval)
+
     except asyncio.CancelledError:
         logger.info("worker.stopped")
         raise
