@@ -88,6 +88,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 The service creates the SQLite database at `DATABASE_PATH` on startup and applies
 pending migrations from `app/database/migrations/`.
 
+Tunnel to ngrok at port 8000 to receive GitHub webhooks on your local machine:
+
+```bash
+ngrok http 8000
+```
+
 ---
 
 ## Available endpoints

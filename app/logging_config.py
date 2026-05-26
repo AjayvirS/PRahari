@@ -9,13 +9,15 @@ import structlog
 
 def configure_logging(log_level: str = "INFO") -> None:
     """Configure structlog for JSON-formatted structured logging."""
-    level = getattr(logging, log_level.upper(), logging.INFO)
+    normalized_level = (log_level or "INFO").strip().strip("\"").strip("'")
+    level = getattr(logging, normalized_level.upper(), logging.INFO)
 
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
         level=level,
     )
+    logging.getLogger().setLevel(level)
 
     structlog.configure(
         processors=[
@@ -28,7 +30,8 @@ def configure_logging(log_level: str = "INFO") -> None:
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
     )
 
 

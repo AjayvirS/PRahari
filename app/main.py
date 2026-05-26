@@ -9,8 +9,6 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app.api.webhook import router as webhook_router
-from app.business.worker import run_worker
 from app.config import settings
 from app.database.connection import initialize_database
 from app.logging_config import configure_logging, get_logger
@@ -18,10 +16,14 @@ from app.logging_config import configure_logging, get_logger
 configure_logging(settings.log_level)
 logger = get_logger(__name__)
 
-
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown."""
+    from app.business.worker import run_worker
+
+    normalized_level = (settings.log_level or "INFO").strip().strip("\"").strip("'")
+    logger.info("app.log_level", configured=settings.log_level, normalized=normalized_level)
+
     logger.info("app.startup", app_env=settings.app_env)
     if not settings.github_token:
         logger.warning(
@@ -46,6 +48,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from app.api.webhook import router as webhook_router
+
     app = FastAPI(
         title="PRahari",
         description="Webhook-driven automated PR review bot",
@@ -65,9 +69,13 @@ def create_app() -> FastAPI:
 app = create_app()
 
 if __name__ == "__main__":
+    uvicorn_level = (settings.log_level or "INFO").strip().strip("\"").strip("'").lower()
     uvicorn.run(
         "app.main:app",
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.app_env == "development",
+        reload_dirs=["app"],
+        log_config=None,
+        log_level=uvicorn_level,
     )

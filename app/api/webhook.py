@@ -72,6 +72,13 @@ async def receive_webhook(
 ) -> dict[str, Any]:
     """Receive a GitHub webhook event and accept supported PR events."""
     payload_bytes = await request.body()
+    logger.debug(
+        "webhook.received_bytes",
+        delivery_id=x_github_delivery,
+        github_event=x_github_event,
+        signature_present=bool(x_hub_signature_256),
+        payload_bytes=len(payload_bytes),
+    )
     _verify_signature(payload_bytes, x_hub_signature_256)
 
     payload: dict[str, Any] = await request.json()
