@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -16,11 +17,35 @@ JsonDict = dict[str, Any]
 JsonList = list[JsonDict]
 
 
+@dataclass(slots=True)
+class PullRequest:
+    """A simplified pull request data model."""
+
+    number: int
+    title: str
+    body: str
+    additions: int
+    deletions: int
+    head_sha: str
+
+    @classmethod
+    def from_api_response(cls, data: JsonDict) -> PullRequest:
+        """Create a PullRequest from the GitHub API response."""
+        return cls(
+            number=data["number"],
+            title=data["title"],
+            body=data.get("body") or "",
+            additions=data.get("additions", 0),
+            deletions=data.get("deletions", 0),
+            head_sha=data["head"]["sha"],
+        )
+
+
 class Client(ABC):
     """Interface for GitHub API operations used by the app."""
 
     @abstractmethod
-    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> JsonDict:
+    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
         """Fetch a single pull request from GitHub."""
 
     @abstractmethod
@@ -58,9 +83,12 @@ class GitHubClient(Client):
         if self._token:
             self._headers["Authorization"] = f"Bearer {self._token}"
 
-    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> JsonDict:
+    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
         """Fetch a single pull request from GitHub."""
-        return await self._request("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
+        data = await self._request("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
+        if isinstance(data, list):
+            raise TypeError("Expected a single pull request, but got a list.")
+        return PullRequest.from_api_response(data)
 
     async def get_authenticated_user(self) -> JsonDict:
         """Fetch the authenticated GitHub user for the configured token."""
