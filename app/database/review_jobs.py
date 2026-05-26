@@ -12,6 +12,7 @@ PENDING_STATUS = "pending"
 PROCESSING_STATUS = "processing"
 COMPLETED_STATUS = "completed"
 FAILED_STATUS = "failed"
+STALE_STATUS = "stale"
 
 
 @dataclass(slots=True)
@@ -159,6 +160,15 @@ class ReviewJobRepository:
             terminal_column="failed_at",
             last_error=error_message,
             increment_retry_count=True,
+        )
+
+    def mark_job_stale(self, job_id: str, reason: str) -> ReviewJob:
+        """Mark a processing job as stale without treating it as a failure."""
+        return self._update_job_status(
+            job_id=job_id,
+            status=STALE_STATUS,
+            terminal_column="completed_at",
+            last_error=reason,
         )
 
     def _update_job_status(

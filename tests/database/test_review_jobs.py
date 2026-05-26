@@ -11,6 +11,7 @@ from app.database.review_jobs import (
     PENDING_STATUS,
     PROCESSING_STATUS,
     REVIEW_JOB_TYPE,
+    STALE_STATUS,
     ReviewJobRepository,
 )
 
@@ -135,7 +136,7 @@ def test_claim_next_pending_job_marks_it_processing(tmp_path: Path) -> None:
     assert claimed.claimed_at is not None
 
 
-def test_completed_and_failed_jobs_are_marked_terminally(tmp_path: Path) -> None:
+def test_completed_failed_and_stale_jobs_are_marked_terminally(tmp_path: Path) -> None:
     database_path = tmp_path / "review-jobs.db"
     initialize_database(str(database_path))
     repository = ReviewJobRepository(str(database_path))
@@ -168,3 +169,22 @@ def test_completed_and_failed_jobs_are_marked_terminally(tmp_path: Path) -> None
     assert failed.failed_at is not None
     assert failed.last_error == "boom"
     assert failed.retry_count == 1
+
+    stale_seed, _ = repository.insert_review_job(
+        repo="AjayvirS/PRahari",
+        pr_number=32,
+        head_sha="stale",
+    )
+    claimed_for_stale = repository.claim_next_pending_job()
+    assert claimed_for_stale is not None
+    assert claimed_for_stale.job_id == stale_seed.job_id
+
+    stale = repository.mark_job_stale(
+        claimed_for_stale.job_id,
+        "Skipped review because the PR head advanced before posting.",
+    )
+    assert stale.status == STALE_STATUS
+    assert stale.completed_at is not None
+    assert stale.failed_at is None
+    assert stale.last_error == "Skipped review because the PR head advanced before posting."
+    assert stale.retry_count == 0

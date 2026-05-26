@@ -69,6 +69,24 @@ async def process_review_job(
             changed_files,
             head_sha=job.head_sha,
         )
+        current_pull_request = await github.get_pull_request(owner, repo_name, job.pr_number)
+        current_head_sha = _get_pull_request_head_sha(current_pull_request)
+        if current_head_sha != job.head_sha:
+            stale_reason = (
+                "Skipped review because the PR head advanced before posting: "
+                f"expected {job.head_sha}, found {current_head_sha}."
+            )
+            stale_job = review_jobs.mark_job_stale(job.job_id, stale_reason)
+            logger.info(
+                "worker.process_job.skipped_stale_result",
+                job_id=job.job_id,
+                repo=job.repo,
+                pr_number=job.pr_number,
+                head_sha=job.head_sha,
+                current_head_sha=current_head_sha,
+            )
+            return stale_job
+
         await github.post_issue_comment(owner, repo_name, job.pr_number, comment_body)
         completed_job = review_jobs.mark_job_completed(job.job_id)
         logger.info(
@@ -156,3 +174,12 @@ def _has_existing_review_for_sha(
             return True
 
     return False
+
+
+def _get_pull_request_head_sha(pull_request: dict) -> str:
+    head = pull_request.get("head") or {}
+    head_sha = str(head.get("sha") or "")
+    if not head_sha:
+        raise ValueError("GitHub pull request response did not include head.sha")
+
+    return head_sha

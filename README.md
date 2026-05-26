@@ -120,6 +120,10 @@ The `review_jobs` table stores:
 - `retry_count`, `max_retries`, and `last_error`
 - `created_at`, `updated_at`, `claimed_at`, `completed_at`, and `failed_at`
 
+Job statuses currently include `pending`, `processing`, `completed`, `failed`,
+and `stale`. Stale jobs are terminal skips used when a pull request head SHA has
+changed before the worker posts its generated review comment.
+
 Dedup is enforced with a unique index on `(job_type, repo, pr_number, head_sha)`.
 That prevents repeated webhook deliveries for the same PR head SHA from creating
 duplicate review jobs while still allowing a new job when the head SHA changes.
@@ -130,7 +134,8 @@ Supported `pull_request` webhook events create rows in `review_jobs`.
 The worker polls for the oldest `pending` job, marks it `processing`, fetches
 the pull request and changed files from GitHub, checks for an existing review
 comment from the authenticated reviewer for the same SHA, generates a structured
-review summary comment, and then marks the job `completed` or `failed`.
+review summary comment, re-checks the pull request head SHA immediately before
+posting, and then marks the job `completed`, `stale`, or `failed`.
 
 By default, review generation stays deterministic. Set `REVIEW_PROVIDER=openai`
 and provide `OPENAI_API_KEY` to enable the OpenAI-backed reviewer. If the API

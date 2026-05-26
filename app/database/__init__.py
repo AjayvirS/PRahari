@@ -7,6 +7,7 @@ from .review_jobs import (
     PENDING_STATUS,
     PROCESSING_STATUS,
     REVIEW_JOB_TYPE,
+    STALE_STATUS,
     ReviewJob,
     ReviewJobRepository,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "PENDING_STATUS",
     "PROCESSING_STATUS",
     "REVIEW_JOB_TYPE",
+    "STALE_STATUS",
     "ReviewJob",
     "ReviewJobRepository",
     "get_connection",
