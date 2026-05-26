@@ -9,6 +9,7 @@ import httpx
 
 from app.config import settings
 from app.logging_config import get_logger
+from app.services.github_client import PullRequest
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,7 @@ class ReviewSections:
 class ReviewGenerator(Protocol):
     """Interface for generating structured review sections."""
 
-    async def generate(self, review_input: ReviewInput) -> ReviewSections:
+    async def generate(self, *, user_prompt: str) -> ReviewSections:
         """Return review sections for the provided PR context."""
 
 
@@ -62,7 +63,7 @@ class OpenAIReviewGenerator:
         self._base_url = (base_url or settings.openai_base_url).rstrip("/")
         self._timeout_seconds = timeout_seconds or settings.openai_timeout_seconds
 
-    async def generate(self, review_input: ReviewInput) -> ReviewSections:
+    async def generate(self, *, user_prompt: str) -> ReviewSections:
         if not self._api_key:
             raise ReviewGenerationError("OpenAI API key is not configured")
 
@@ -79,7 +80,7 @@ class OpenAIReviewGenerator:
                 },
                 {
                     "role": "user",
-                    "content": self._build_prompt(review_input),
+                    "content": user_prompt,
                 },
             ],
             "response_format": {
@@ -138,18 +139,60 @@ class OpenAIReviewGenerator:
             )
             raise ReviewGenerationError("OpenAI returned an invalid review payload") from exc
 
-    def _build_prompt(self, review_input: ReviewInput) -> str:
-        changed_files = "\n".join(f"- {filename}" for filename in review_input.changed_files[:50])
-        body = review_input.body.strip() or "(no PR body provided)"
+
+
+
+class PromptAssemblyError(RuntimeError):
+    """Raised when a review prompt cannot be assembled."""
+
+
+async def assemble_prompt(
+    *,
+    pull_request: PullRequest,
+    changed_files: list[str],
+    repo_prompt_template: str | None,
+) -> str:
+    """
+    Assemble a review prompt from a template and PR context.
+
+    Args:
+        pull_request: The pull request to review.
+        changed_files: The list of changed files in the PR.
+        repo_prompt_template: The repository-local prompt template, if one exists.
+
+    Returns:
+        The assembled prompt.
+    """
+    if not repo_prompt_template:
+        # Fallback to the simple, original prompt format
+        changed_files_str = "\n".join(f"- {filename}" for filename in changed_files[:50])
+        body = pull_request.body.strip() or "(no PR body provided)"
         return (
-            f"PR #{review_input.pr_number or 'unknown'}\n"
-            f"Title: {review_input.title}\n"
-            f"Head SHA: {review_input.head_sha}\n"
-            f"Additions: {review_input.additions}\n"
-            f"Deletions: {review_input.deletions}\n"
+            f"PR #{pull_request.number or 'unknown'}\n"
+            f"Title: {pull_request.title}\n"
+            f"Head SHA: {pull_request.head_sha}\n"
+            f"Additions: {pull_request.additions}\n"
+            f"Deletions: {pull_request.deletions}\n"
             f"Body:\n{body}\n\n"
-            f"Changed files:\n{changed_files or '- none reported'}"
+            f"Changed files:\n{changed_files_str or '- none reported'}"
         )
+
+    # Replace placeholders in the repository-local prompt
+    substitutions = {
+        "pr_number": str(pull_request.number),
+        "pr_title": pull_request.title,
+        "pr_body": pull_request.body.strip() or "(no PR body provided)",
+        "pr_additions": str(pull_request.additions),
+        "pr_deletions": str(pull_request.deletions),
+        "pr_head_sha": pull_request.head_sha,
+        "pr_changed_files": "\n".join(f"- {filename}" for filename in changed_files[:50]),
+    }
+    prompt = repo_prompt_template
+    for key, value in substitutions.items():
+        placeholder = f"{{{key}}}"
+        prompt = prompt.replace(placeholder, value)
+
+    return prompt
 
 
 def build_review_generator() -> ReviewGenerator | None:
