@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"Just chatting."}]}}
+{"type":"result","total_cost_usd":0.001,"modelUsage":{"opus":{"inputTokens":10,"cacheCreationInputTokens":0,"cacheReadInputTokens":0,"outputTokens":5}}}

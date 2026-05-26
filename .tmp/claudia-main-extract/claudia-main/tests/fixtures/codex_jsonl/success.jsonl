@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"t1"}
+{"type":"turn.started","turn_id":"u1"}
+{"type":"item.completed","item":{"type":"command_execution","command":"ls"}}
+{"type":"item.completed","item":{"type":"file_change","path":"x.py"}}
+{"type":"item.completed","item":{"type":"agent_message","text":"Done.\n\n```state_delta\n{\"type\":\"review\",\"message\":\"ok\"}\n```\n"}}
+{"type":"turn.completed","usage":{"input_tokens":54809,"cached_input_tokens":39040,"output_tokens":238,"reasoning_output_tokens":120}}

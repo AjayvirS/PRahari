@@ -1,0 +1,5 @@
+{"type":"item.completed","item":{"type":"command_execution","cmd":"gh pr view 1"}}
+{"type":"item.completed","item":{"type":"error","message":"sub-command exited 1"}}
+{"type":"item.completed","item":{"type":"error","message":"another failure"}}
+{"type":"item.completed","item":{"type":"agent_message","text":"```state_delta\n{\"type\":\"review\",\"status\":\"reviewed\"}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":40,"cached_input_tokens":10,"output_tokens":5,"reasoning_output_tokens":0}}

@@ -1,0 +1,15 @@
+{
+  "ls1intum/Artemis": {
+    "checkout_path": "~/Artemis",
+    "screenshots": true,
+    "review_label": "ready for review"
+  },
+  "ls1intum/thesis-management": {
+    "checkout_path": "~/thesis-management",
+    "screenshots": true
+  },
+  "ls1intum/Apollon": {
+    "checkout_path": "~/Apollon",
+    "screenshots": true
+  }
+}

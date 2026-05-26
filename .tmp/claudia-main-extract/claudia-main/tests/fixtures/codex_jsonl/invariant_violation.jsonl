@@ -1,0 +1,2 @@
+{"type":"item.completed","item":{"type":"agent_message","text":"```state_delta\n{\"type\":\"ok\"}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":200,"output_tokens":5,"reasoning_output_tokens":0}}

@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"```state_delta\n{\"a\":1}\n```\n\n```state_delta\n{\"a\":2}\n```"}]}}
+{"type":"result","total_cost_usd":0,"modelUsage":{}}

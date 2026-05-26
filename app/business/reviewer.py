@@ -5,10 +5,12 @@ from collections import Counter
 from typing import Any
 
 from app.logging_config import get_logger
+from app.services.github_client import PullRequest
 from app.services.review_service import (
     ReviewGenerator,
     ReviewInput,
     ReviewSections,
+    assemble_prompt,
     build_review_generator,
 )
 
@@ -18,34 +20,40 @@ REVIEW_MARKER_SUFFIX = " -->"
 
 
 async def build_review_comment(
-    pull_request: dict[str, Any],
-    changed_files: list[dict[str, Any]],
+    pull_request: PullRequest,
+    changed_files: list[str],
     *,
     head_sha: str,
+    repo_prompt_template: str | None = None,
     generator: ReviewGenerator | None = None,
 ) -> str:
     """Build a structured top-level PR comment with LLM and fallback support."""
-    review_input = _build_review_input(pull_request, changed_files, head_sha=head_sha)
     review_generator = generator if generator is not None else build_review_generator()
 
     if review_generator is not None:
         try:
-            generated = await review_generator.generate(review_input)
+            user_prompt = await assemble_prompt(
+                pull_request=pull_request,
+                changed_files=changed_files,
+                repo_prompt_template=repo_prompt_template,
+            )
+            generated = await review_generator.generate(user_prompt=user_prompt)
             return append_review_comment_marker(_format_review_comment(generated), head_sha)
         except Exception:
             logger.exception(
                 "reviewer.build_review_comment.generator_failed",
-                pr_number=pull_request.get("number"),
+                pr_number=pull_request.number,
                 head_sha=head_sha,
             )
 
     try:
+        review_input = _build_review_input(pull_request, changed_files, head_sha=head_sha)
         generated = _build_structured_review_sections(review_input)
         return append_review_comment_marker(_format_review_comment(generated), head_sha)
     except Exception:
         logger.exception(
             "reviewer.build_review_comment.fallback_failed",
-            pr_number=pull_request.get("number"),
+            pr_number=pull_request.number,
             head_sha=head_sha,
         )
         return build_placeholder_review_comment(head_sha)
@@ -75,18 +83,18 @@ def comment_reviews_head_sha(comment_body: str, head_sha: str) -> bool:
 
 
 def _build_review_input(
-    pull_request: dict[str, Any],
-    changed_files: list[dict[str, Any]],
+    pull_request: PullRequest,
+    changed_files: list[str],
     *,
     head_sha: str,
 ) -> ReviewInput:
     return ReviewInput(
-        pr_number=pull_request.get("number"),
-        title=str(pull_request.get("title") or "Untitled PR"),
-        body=str(pull_request.get("body") or ""),
-        additions=int(pull_request.get("additions") or 0),
-        deletions=int(pull_request.get("deletions") or 0),
-        changed_files=[str(file_info["filename"]) for file_info in changed_files],
+        pr_number=pull_request.number,
+        title=pull_request.title,
+        body=pull_request.body,
+        additions=pull_request.additions,
+        deletions=pull_request.deletions,
+        changed_files=changed_files,
         head_sha=head_sha,
     )
 

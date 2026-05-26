@@ -19,9 +19,10 @@ class Settings(BaseSettings):
 
     # Review generation
     review_provider: str = "deterministic"
+    review_prompt_file_path: str = ".prahari.md"
     openai_api_key: str = ""
-    openai_model: str = "gpt-4.1-mini"
-    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4-turbo"
+    openai_base_url: str | None = None
     openai_timeout_seconds: float = 30.0
 
     # Application

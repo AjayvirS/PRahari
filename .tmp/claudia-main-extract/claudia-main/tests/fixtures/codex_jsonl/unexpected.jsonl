@@ -1,0 +1,3 @@
+{"type":"item.completed","item":{"type":"web_search_request","query":"x"}}
+{"type":"item.completed","item":{"type":"agent_message","text":"```state_delta\n{\"type\":\"ok\"}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":5,"cached_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0}}

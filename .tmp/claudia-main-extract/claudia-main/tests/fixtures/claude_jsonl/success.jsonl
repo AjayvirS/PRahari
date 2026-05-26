@@ -1,0 +1,3 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"Doing the work.\n\n```state_delta\n{\"type\":\"review\",\"message\":\"ok\"}\n```\n"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}
+{"type":"result","total_cost_usd":0.0123,"modelUsage":{"opus":{"inputTokens":1000,"cacheCreationInputTokens":200,"cacheReadInputTokens":50,"outputTokens":300}}}

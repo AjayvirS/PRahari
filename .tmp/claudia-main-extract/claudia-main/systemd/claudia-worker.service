@@ -1,0 +1,27 @@
+[Unit]
+Description=Claudia Worker
+After=network-online.target postgresql.service claudia-webhook.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=claudia
+Group=claudia
+WorkingDirectory=/home/claudia/claudia
+ExecStart=/home/claudia/claudia/.venv/bin/python worker.py
+Restart=always
+RestartSec=10
+Environment=PATH=/home/claudia/.local/bin:/home/claudia/.nvm/versions/node/v22.22.0/bin:/home/claudia/.sdkman/candidates/java/current/bin:/home/claudia/claudia/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CODEX_HOME=/home/claudia/.codex
+EnvironmentFile=/home/claudia/claudia/.env
+
+# Worker needs more access (git, gh, claude CLI, etc.)
+NoNewPrivileges=yes
+
+# Kill whole process group on stop (catches Claude subprocesses)
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

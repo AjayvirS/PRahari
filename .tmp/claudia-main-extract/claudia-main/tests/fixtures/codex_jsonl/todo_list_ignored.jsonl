@@ -1,0 +1,4 @@
+{"type":"item.completed","item":{"type":"todo_list","items":[{"text":"step 1","done":true}]}}
+{"type":"item.completed","item":{"type":"command_execution","cmd":"ls"}}
+{"type":"item.completed","item":{"type":"agent_message","text":"```state_delta\n{\"type\":\"hygiene\",\"fixed\":true}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":50,"cached_input_tokens":10,"output_tokens":5,"reasoning_output_tokens":0}}

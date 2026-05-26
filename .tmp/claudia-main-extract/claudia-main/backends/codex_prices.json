@@ -1,0 +1,7 @@
+{
+  "gpt-5.5": {
+    "input_per_mtok": 5.00,
+    "output_per_mtok": 30.00,
+    "cache_read_per_mtok": 0.50
+  }
+}

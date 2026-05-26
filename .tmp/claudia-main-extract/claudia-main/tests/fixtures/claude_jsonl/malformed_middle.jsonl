@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"```state_delta\n{not json}\n```\n```state_delta\n{\"type\":\"ok\"}\n```"}]}}
+{"type":"result","total_cost_usd":0,"modelUsage":{}}

@@ -1,0 +1,24 @@
+[Unit]
+Description=Claudia Webhook Receiver
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=claudia
+Group=claudia
+WorkingDirectory=/home/claudia/claudia
+ExecStart=/home/claudia/claudia/.venv/bin/uvicorn webhook_receiver:app --host 127.0.0.1 --port 8080 --workers 1
+Restart=always
+RestartSec=5
+Environment=PATH=/home/claudia/claudia/.venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/claudia/claudia/.env
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/claudia
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

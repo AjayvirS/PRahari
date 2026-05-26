@@ -64,10 +64,16 @@ async def process_review_job(
             return completed_job
 
         changed_files = await github.list_pull_request_files(owner, repo_name, job.pr_number)
+        repo_prompt_template = await github.get_repository_file_content(
+            owner,
+            repo_name,
+            settings.review_prompt_file_path,
+        )
         comment_body = await build_review_comment(
             pull_request,
-            changed_files,
+            [file["filename"] for file in changed_files],
             head_sha=job.head_sha,
+            repo_prompt_template=repo_prompt_template,
         )
         await github.post_issue_comment(owner, repo_name, job.pr_number, comment_body)
         completed_job = review_jobs.mark_job_completed(job.job_id)
