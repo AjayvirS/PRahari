@@ -49,6 +49,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     from app.api.webhook import router as webhook_router
+    from app.api.ops import router as ops_router
 
     app = FastAPI(
         title="PRahari",
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"status": "ok"})
 
     app.include_router(webhook_router, tags=["webhook"])
+    app.include_router(ops_router, tags=["ops"])
     return app
 
 

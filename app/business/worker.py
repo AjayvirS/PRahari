@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 from app.config import settings
 from app.database.review_jobs import ReviewJob, ReviewJobRepository
@@ -12,6 +13,24 @@ from .reviewer import build_review_comment, comment_reviews_head_sha
 from .reviewer_identity import ReviewerIdentityProvider
 
 logger = get_logger(__name__)
+
+_worker_state: dict[str, str | None] = {
+    "started_at": None,
+    "last_poll_at": None,
+    "last_claim_at": None,
+    "last_claim_result": None,
+    "last_job_id": None,
+    "last_error": None,
+}
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def get_worker_state() -> dict[str, str | None]:
+    """Return a snapshot of the worker state for ops debugging."""
+    return dict(_worker_state)
 
 
 async def process_review_job(
@@ -121,38 +140,37 @@ async def run_worker(
     client: Client | None = None,
     identity_provider: ReviewerIdentityProvider | None = None,
 ) -> None:
-    """Poll the database for pending review jobs and process them concurrently."""
+    """Poll the database for pending review jobs and process them."""
     logger.info(
         "worker.start",
         poll_interval=settings.worker_poll_interval,
         concurrency=settings.worker_concurrency,
     )
-    semaphore = asyncio.Semaphore(settings.worker_concurrency)
-
-    async def _process_with_semaphore() -> None:
-        async with semaphore:
-            await process_next_job(
-                repository=repository,
-                client=client,
-                identity_provider=identity_provider,
-            )
+    _worker_state["started_at"] = _utc_now()
+    review_jobs = repository or ReviewJobRepository()
 
     try:
         while True:
-            # This could be improved with a more sophisticated scheduling mechanism
-            # that combines polling and event-driven triggers. For now, we poll
-            # and spawn concurrent tasks up to the concurrency limit.
-            tasks = [
-                asyncio.create_task(_process_with_semaphore())
-                for _ in range(settings.worker_concurrency - len(asyncio.all_tasks()))
-            ]
-            if not tasks:
+            _worker_state["last_poll_at"] = _utc_now()
+            job = await process_next_job(
+                repository=review_jobs,
+                client=client,
+                identity_provider=identity_provider,
+            )
+            if job is None:
+                _worker_state["last_claim_result"] = "none"
+                _worker_state["last_claim_at"] = _utc_now()
+                _worker_state["last_job_id"] = None
                 await asyncio.sleep(settings.worker_poll_interval)
-
+            else:
+                _worker_state["last_claim_result"] = "claimed"
+                _worker_state["last_claim_at"] = _utc_now()
+                _worker_state["last_job_id"] = job.job_id
     except asyncio.CancelledError:
         logger.info("worker.stopped")
         raise
-    except Exception:
+    except Exception as exc:
+        _worker_state["last_error"] = str(exc)
         logger.exception("worker.unexpected_error")
         await asyncio.sleep(settings.worker_poll_interval)
 

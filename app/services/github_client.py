@@ -70,6 +70,12 @@ class Client(ABC):
     ) -> JsonList:
         """List issue comments for a pull request."""
 
+    @abstractmethod
+    async def get_repository_file_content(
+        self, owner: str, repo: str, path: str
+    ) -> str | None:
+        """Fetch the content of a file in the repository, if it exists."""
+
 
 class GitHubClient(Client):
     """Thin async wrapper around the GitHub REST API."""
@@ -119,6 +125,33 @@ class GitHubClient(Client):
             f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
             params={"per_page": 100},
         )
+
+    async def get_repository_file_content(
+        self, owner: str, repo: str, path: str
+    ) -> str | None:
+        """Fetch the content of a file in the repository, if it exists."""
+        headers = {
+            **self._headers,
+            "Accept": "application/vnd.github.raw",
+        }
+        async with httpx.AsyncClient(base_url=_BASE_URL, timeout=30.0) as client:
+            response = await client.request(
+                "GET",
+                f"/repos/{owner}/{repo}/contents/{path}",
+                headers=headers,
+            )
+
+        if response.status_code == 404:
+            return None
+
+        response.raise_for_status()
+        logger.info(
+            "github.request",
+            method="GET",
+            path=f"/repos/{owner}/{repo}/contents/{path}",
+            status_code=response.status_code,
+        )
+        return response.text
 
     async def _request(self, method: str, path: str, **kwargs: object) -> JsonDict | JsonList:
         async with httpx.AsyncClient(base_url=_BASE_URL, timeout=30.0) as client:
