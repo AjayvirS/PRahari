@@ -17,13 +17,24 @@ router = APIRouter()
 SUPPORTED_PR_ACTIONS = {"opened", "synchronize", "reopened"}
 
 
-def _verify_signature(payload: bytes, signature_header: str | None) -> None:
+def _verify_signature(
+    payload: bytes,
+    signature_header: str | None,
+    *,
+    delivery_id: str | None = None,
+    github_event: str | None = None,
+) -> None:
     """Verify the GitHub webhook HMAC-SHA256 signature."""
     secret = settings.github_webhook_secret
     if not secret:
         return
 
     if not signature_header:
+        logger.warning(
+            "webhook.signature_missing",
+            delivery_id=delivery_id,
+            github_event=github_event,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing X-Hub-Signature-256 header",
@@ -34,6 +45,11 @@ def _verify_signature(payload: bytes, signature_header: str | None) -> None:
     ).hexdigest()
 
     if not hmac.compare_digest(expected, signature_header):
+        logger.warning(
+            "webhook.signature_invalid",
+            delivery_id=delivery_id,
+            github_event=github_event,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid webhook signature",
@@ -79,7 +95,12 @@ async def receive_webhook(
         signature_present=bool(x_hub_signature_256),
         payload_bytes=len(payload_bytes),
     )
-    _verify_signature(payload_bytes, x_hub_signature_256)
+    _verify_signature(
+        payload_bytes,
+        x_hub_signature_256,
+        delivery_id=x_github_delivery,
+        github_event=x_github_event,
+    )
 
     payload: dict[str, Any] = await request.json()
     metadata = _parse_webhook_metadata(

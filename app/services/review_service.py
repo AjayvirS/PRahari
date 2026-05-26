@@ -60,7 +60,8 @@ class OpenAIReviewGenerator:
     ) -> None:
         self._api_key = api_key or settings.openai_api_key
         self._model = model or settings.openai_model
-        self._base_url = (base_url or settings.openai_base_url).rstrip("/")
+        resolved_base_url = base_url or settings.openai_base_url or "https://api.openai.com/v1"
+        self._base_url = resolved_base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds or settings.openai_timeout_seconds
 
     async def generate(self, *, user_prompt: str) -> ReviewSections:

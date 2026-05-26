@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     # Worker
     worker_poll_interval: int = 5
+    worker_concurrency: int = 1
 
 
 settings = Settings()

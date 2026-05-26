@@ -36,15 +36,20 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             message="GITHUB_WEBHOOK_SECRET is empty. Signature validation is disabled.",
         )
     initialize_database()
-    worker_task = asyncio.create_task(run_worker())
+    worker_tasks = [
+        asyncio.create_task(run_worker()) for _ in range(settings.worker_concurrency)
+    ]
     yield
-    worker_task.cancel()
+    for task in worker_tasks:
+        task.cancel()
+    await asyncio.gather(*worker_tasks, return_exceptions=True)
     logger.info("app.shutdown")
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     from app.api.webhook import router as webhook_router
+    from app.api.ops import router as ops_router
 
     app = FastAPI(
         title="PRahari",
@@ -59,6 +64,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"status": "ok"})
 
     app.include_router(webhook_router, tags=["webhook"])
+    app.include_router(ops_router, tags=["ops"])
     return app
 
 
