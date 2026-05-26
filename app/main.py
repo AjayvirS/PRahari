@@ -34,9 +34,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             message="GITHUB_WEBHOOK_SECRET is empty. Signature validation is disabled.",
         )
     initialize_database()
-    worker_task = asyncio.create_task(run_worker())
+    worker_tasks = [
+        asyncio.create_task(run_worker()) for _ in range(settings.worker_concurrency)
+    ]
     yield
-    worker_task.cancel()
+    for task in worker_tasks:
+        task.cancel()
+    await asyncio.gather(*worker_tasks, return_exceptions=True)
     logger.info("app.shutdown")
 
 
