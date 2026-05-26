@@ -188,25 +188,6 @@ class ReviewJobRepository:
 
         return self.get_job(job_id)
 
-    def list_recent_jobs(self, *, limit: int = 20) -> list[ReviewJob]:
-        """List recent review jobs ordered by creation time (descending)."""
-        with get_connection(self._database_path) as connection:
-            rows = connection.execute(
-                "SELECT * FROM review_jobs ORDER BY created_at DESC, job_id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-
-        return [_row_to_review_job(row) for row in rows]
-
-    def count_jobs_by_status(self) -> dict[str, int]:
-        """Return counts of jobs grouped by status."""
-        with get_connection(self._database_path) as connection:
-            rows = connection.execute(
-                "SELECT status, COUNT(*) AS total FROM review_jobs GROUP BY status"
-            ).fetchall()
-
-        return {row["status"]: int(row["total"]) for row in rows}
-
 
 def _row_to_review_job(row: sqlite3.Row | None) -> ReviewJob:
     if row is None:

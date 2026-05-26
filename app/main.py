@@ -21,9 +21,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown."""
     from app.business.worker import run_worker
 
-    normalized_level = (settings.log_level or "INFO").strip().strip("\"").strip("'")
-    logger.info("app.log_level", configured=settings.log_level, normalized=normalized_level)
-
     logger.info("app.startup", app_env=settings.app_env)
     if not settings.github_token:
         logger.warning(
@@ -49,7 +46,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     from app.api.webhook import router as webhook_router
-    from app.api.ops import router as ops_router
 
     app = FastAPI(
         title="PRahari",
@@ -64,7 +60,6 @@ def create_app() -> FastAPI:
         return JSONResponse({"status": "ok"})
 
     app.include_router(webhook_router, tags=["webhook"])
-    app.include_router(ops_router, tags=["ops"])
     return app
 
 
@@ -80,4 +75,5 @@ if __name__ == "__main__":
         reload_dirs=["app"],
         log_config=None,
         log_level=uvicorn_level,
+        use_colors=False,
     )

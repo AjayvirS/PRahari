@@ -8,16 +8,19 @@ import structlog
 
 
 def configure_logging(log_level: str = "INFO") -> None:
-    """Configure structlog for JSON-formatted structured logging."""
+    """Configure structlog for readable structured logging."""
     normalized_level = (log_level or "INFO").strip().strip("\"").strip("'")
     level = getattr(logging, normalized_level.upper(), logging.INFO)
 
     logging.basicConfig(
-        format="%(message)s",
+        format="%(levelname)s: %(message)s",
         stream=sys.stdout,
         level=level,
     )
     logging.getLogger().setLevel(level)
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles.watcher").setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[
@@ -26,7 +29,7 @@ def configure_logging(log_level: str = "INFO") -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
+            structlog.processors.KeyValueRenderer(key_order=["event", "level", "timestamp"]),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
         context_class=dict,

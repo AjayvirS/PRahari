@@ -141,12 +141,6 @@ class OpenAIReviewGenerator:
             raise ReviewGenerationError("OpenAI returned an invalid review payload") from exc
 
 
-
-
-class PromptAssemblyError(RuntimeError):
-    """Raised when a review prompt cannot be assembled."""
-
-
 async def assemble_prompt(
     *,
     pull_request: PullRequest,

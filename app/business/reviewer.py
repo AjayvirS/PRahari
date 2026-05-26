@@ -110,7 +110,7 @@ def _build_structured_review_sections(review_input: ReviewInput) -> ReviewSectio
 
     summary = (
         f"{review_input.title}. This PR touches {len(review_input.changed_files)} file(s) "
-        f"with {review_input.additions} addition(s) and {review.input.deletions} deletion(s)."
+        f"with {review_input.additions} addition(s) and {review_input.deletions} deletion(s)."
     )
     if areas:
         summary = f"{summary} Primary areas: {areas}."
