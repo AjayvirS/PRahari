@@ -5,11 +5,18 @@ APP_PORT="${APP_PORT:-8000}"
 APP_HOST="${APP_HOST:-0.0.0.0}"
 VENV_DIR="${VENV_DIR:-.venv}"
 VENV_PY="${VENV_PY:-$VENV_DIR/Scripts/python}"
+UVICORN_BIN="${UVICORN_BIN:-$VENV_DIR/Scripts/uvicorn}"
 BOOTSTRAP="${BOOTSTRAP:-1}"
 REQ_FILE="${REQ_FILE:-requirements.txt}"
-APP_CMD="${APP_CMD:-\"$VENV_PY\" -m app.main}"
-TUNNEL_CMD="${TUNNEL_CMD:-devtunnel host -p ${APP_PORT} --allow-anonymous}"
-
+APP_CMD="${APP_CMD:-\"$UVICORN_BIN\" app.main:app --host $APP_HOST --port $APP_PORT}"
+TUNNEL_ID="${TUNNEL_ID:-praharia-synthia-dev}"
+TUNNEL_ACCESS="${TUNNEL_ACCESS:---allow-anonymous}"
+PORT_PROTOCOL="${PORT_PROTOCOL:-http}"
+TUNNEL_CMD="${TUNNEL_CMD:-devtunnel host ${TUNNEL_ID} ${TUNNEL_ACCESS}}"
+CREATE_TUNNEL="${CREATE_TUNNEL:-1}"
+CREATE_PORT="${CREATE_PORT:-1}"
+TUNNEL_CREATE_CMD="${TUNNEL_CREATE_CMD:-devtunnel create ${TUNNEL_ID} ${TUNNEL_ACCESS}}"
+PORT_CREATE_CMD="${PORT_CREATE_CMD:-devtunnel port create ${TUNNEL_ID} -p ${APP_PORT} --protocol ${PORT_PROTOCOL}}"
 APP_LOG="${APP_LOG:-devtunnel-app.log}"
 TUNNEL_LOG="${TUNNEL_LOG:-devtunnel-host.log}"
 
@@ -38,6 +45,20 @@ if [[ "$BOOTSTRAP" == "1" ]]; then
   if [[ -f "$REQ_FILE" ]]; then
     echo "Installing requirements from $REQ_FILE"
     "$VENV_PY" -m pip install -r "$REQ_FILE"
+  fi
+fi
+
+if [[ "$CREATE_TUNNEL" == "1" ]]; then
+  if ! devtunnel show "$TUNNEL_ID" >/dev/null 2>&1; then
+    echo "Creating devtunnel: $TUNNEL_CREATE_CMD"
+    bash -lc "$TUNNEL_CREATE_CMD"
+  fi
+fi
+
+if [[ "$CREATE_PORT" == "1" ]]; then
+  if ! devtunnel port list "$TUNNEL_ID" 2>/dev/null | grep -q "${APP_PORT}"; then
+    echo "Creating devtunnel port: $PORT_CREATE_CMD"
+    bash -lc "$PORT_CREATE_CMD"
   fi
 fi
 

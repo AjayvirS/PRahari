@@ -263,10 +263,39 @@ class ReviewJobRepository:
 
         return self.get_job(job_id)
 
+    def requeue_stale_processing_jobs(self, *, older_than_seconds: int) -> int:
+        """Requeue processing jobs that have been claimed for too long."""
+        if older_than_seconds <= 0:
+            return 0
+
+        with get_connection(self._database_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE review_jobs
+                SET status = ?,
+                    updated_at = CURRENT_TIMESTAMP,
+                    claimed_at = NULL
+                WHERE status = ?
+                  AND claimed_at IS NOT NULL
+                  AND claimed_at <= datetime('now', ?)
+                """,
+                (
+                    PENDING_STATUS,
+                    PROCESSING_STATUS,
+                    f"-{older_than_seconds} seconds",
+                ),
+            )
+            connection.commit()
+
+        return cursor.rowcount
+
 
 def _row_to_review_job(row: sqlite3.Row | None) -> ReviewJob:
     if row is None:
         raise LookupError("Review job row was not found")
+
+    def _row_value(key: str) -> str | None:
+        return row[key] if key in row.keys() else None
 
     return ReviewJob(
         job_id=row["job_id"],
@@ -283,9 +312,9 @@ def _row_to_review_job(row: sqlite3.Row | None) -> ReviewJob:
         claimed_at=row["claimed_at"],
         completed_at=row["completed_at"],
         failed_at=row["failed_at"],
-        comment_id=row["comment_id"],
-        comment_body=row["comment_body"],
-        comment_author=row["comment_author"],
-        comment_type=row["comment_type"],
-        in_reply_to_id=row["in_reply_to_id"],
+        comment_id=_row_value("comment_id"),
+        comment_body=_row_value("comment_body"),
+        comment_author=_row_value("comment_author"),
+        comment_type=_row_value("comment_type"),
+        in_reply_to_id=_row_value("in_reply_to_id"),
     )

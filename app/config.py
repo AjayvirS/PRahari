@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # Worker
     worker_poll_interval: int = 5
     worker_concurrency: int = 1
+    worker_processing_timeout_seconds: int = 600
 
 
 settings = Settings()

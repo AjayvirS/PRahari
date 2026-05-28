@@ -33,6 +33,18 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             message="GITHUB_WEBHOOK_SECRET is empty. Signature validation is disabled.",
         )
     initialize_database()
+    from app.database.review_jobs import ReviewJobRepository
+
+    review_jobs = ReviewJobRepository()
+    requeued = review_jobs.requeue_stale_processing_jobs(
+        older_than_seconds=settings.worker_processing_timeout_seconds,
+    )
+    if requeued:
+        logger.info(
+            "worker.requeue_stale_jobs",
+            requeued=requeued,
+            threshold_seconds=settings.worker_processing_timeout_seconds,
+        )
     worker_tasks = [
         asyncio.create_task(run_worker()) for _ in range(settings.worker_concurrency)
     ]
