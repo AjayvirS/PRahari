@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .connection import get_connection
 
 REVIEW_JOB_TYPE = "review_pr"
+REPLY_COMMENT_JOB_TYPE = "review_reply"
 PENDING_STATUS = "pending"
 PROCESSING_STATUS = "processing"
 COMPLETED_STATUS = "completed"
@@ -16,7 +17,11 @@ FAILED_STATUS = "failed"
 
 @dataclass(slots=True)
 class ReviewJob:
-    """Durable review job record used by the worker pipeline."""
+    """Durable review job record used by the worker pipeline.
+
+    For reply jobs, comment_id is the durable identifier; head_sha is only meaningful
+    for PR review jobs.
+    """
 
     job_id: str
     job_type: str
@@ -32,6 +37,11 @@ class ReviewJob:
     claimed_at: str | None
     completed_at: str | None
     failed_at: str | None
+    comment_id: str | None
+    comment_body: str | None
+    comment_author: str | None
+    comment_type: str | None
+    in_reply_to_id: str | None
 
 
 class ReviewJobRepository:
@@ -80,6 +90,71 @@ class ReviewJobRepository:
                 WHERE job_type = ? AND repo = ? AND pr_number = ? AND head_sha = ?
                 """,
                 (job_type, repo, pr_number, head_sha),
+            ).fetchone()
+            return _row_to_review_job(existing), False
+
+    def insert_comment_reply_job(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        comment_id: str,
+        comment_body: str,
+        comment_author: str,
+        comment_type: str,
+        in_reply_to_id: str,
+        job_type: str = REPLY_COMMENT_JOB_TYPE,
+        status: str = PENDING_STATUS,
+        max_retries: int = 3,
+    ) -> tuple[ReviewJob, bool]:
+        """Insert a comment reply job or return the existing one on dedup."""
+        job_id = str(uuid.uuid4())
+
+        with get_connection(self._database_path) as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO review_jobs (
+                    job_id,
+                    job_type,
+                    status,
+                    repo,
+                    pr_number,
+                    head_sha,
+                    max_retries,
+                    comment_id,
+                    comment_body,
+                    comment_author,
+                    comment_type,
+                    in_reply_to_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    job_type,
+                    status,
+                    repo,
+                    pr_number,
+                    "",  # head_sha is only meaningful for PR review jobs.
+                    max_retries,
+                    comment_id,
+                    comment_body,
+                    comment_author,
+                    comment_type,
+                    in_reply_to_id,
+                ),
+            )
+            connection.commit()
+
+            if cursor.rowcount == 1:
+                return self.get_job(job_id), True
+
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM review_jobs
+                WHERE job_type = ? AND repo = ? AND pr_number = ? AND comment_id = ?
+                """,
+                (job_type, repo, pr_number, comment_id),
             ).fetchone()
             return _row_to_review_job(existing), False
 
@@ -208,4 +283,9 @@ def _row_to_review_job(row: sqlite3.Row | None) -> ReviewJob:
         claimed_at=row["claimed_at"],
         completed_at=row["completed_at"],
         failed_at=row["failed_at"],
+        comment_id=row["comment_id"],
+        comment_body=row["comment_body"],
+        comment_author=row["comment_author"],
+        comment_type=row["comment_type"],
+        in_reply_to_id=row["in_reply_to_id"],
     )

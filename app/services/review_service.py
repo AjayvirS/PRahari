@@ -47,6 +47,13 @@ class ReviewGenerator(Protocol):
         """Return review sections for the provided PR context."""
 
 
+class CommentReplyGenerator(Protocol):
+    """Interface for generating reply comments."""
+
+    async def generate(self, *, user_prompt: str) -> str:
+        """Return a reply comment for the provided context."""
+
+
 class OpenAIReviewGenerator:
     """Generate PR review sections using the OpenAI Chat Completions API."""
 
@@ -141,6 +148,75 @@ class OpenAIReviewGenerator:
             raise ReviewGenerationError("OpenAI returned an invalid review payload") from exc
 
 
+class OpenAICommentReplyGenerator:
+    """Generate follow-up replies to review comments using OpenAI."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> None:
+        self._api_key = api_key or settings.openai_api_key
+        self._model = model or settings.openai_model
+        resolved_base_url = base_url or settings.openai_base_url or "https://api.openai.com/v1"
+        self._base_url = resolved_base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds or settings.openai_timeout_seconds
+
+    async def generate(self, *, user_prompt: str) -> str:
+        if not self._api_key:
+            raise ReviewGenerationError("OpenAI API key is not configured")
+
+        payload = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are replying to a follow-up comment on a PR review. "
+                        "Provide a concise, helpful response. If more context is needed, "
+                        "ask one clarifying question."
+                    ),
+                },
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+
+        try:
+            async with httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout_seconds,
+            ) as client:
+                response = await client.post(
+                    "/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            return str(content).strip()
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "review_service.openai.reply_http_error",
+                error=str(exc),
+                model=self._model,
+            )
+            raise ReviewGenerationError(f"OpenAI request failed: {exc}") from exc
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "review_service.openai.reply_invalid_response",
+                error=str(exc),
+                model=self._model,
+            )
+            raise ReviewGenerationError("OpenAI returned an invalid reply payload") from exc
+
+
 async def assemble_prompt(
     *,
     pull_request: PullRequest,
@@ -190,10 +266,35 @@ async def assemble_prompt(
     return prompt
 
 
+async def assemble_reply_prompt(
+    *,
+    pull_request: PullRequest,
+    review_comment: str,
+    user_comment: str,
+) -> str:
+    """Assemble a prompt for replying to a review follow-up comment."""
+    body = pull_request.body.strip() or "(no PR body provided)"
+    return (
+        f"PR #{pull_request.number}\n"
+        f"Title: {pull_request.title}\n"
+        f"Head SHA: {pull_request.head_sha}\n"
+        f"Body:\n{body}\n\n"
+        f"Review comment:\n{review_comment}\n\n"
+        f"User reply:\n{user_comment}"
+    )
+
+
 def build_review_generator() -> ReviewGenerator | None:
     """Return the configured review generator, if one is enabled."""
     if settings.review_provider == "openai":
         return OpenAIReviewGenerator()
+    return None
+
+
+def build_reply_generator() -> CommentReplyGenerator | None:
+    """Return the configured comment reply generator, if enabled."""
+    if settings.review_provider == "openai":
+        return OpenAICommentReplyGenerator()
     return None
 
 

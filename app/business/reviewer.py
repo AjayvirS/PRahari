@@ -7,10 +7,13 @@ from typing import Any
 from app.logging_config import get_logger
 from app.services.github_client import PullRequest
 from app.services.review_service import (
+    CommentReplyGenerator,
     ReviewGenerator,
     ReviewInput,
     ReviewSections,
     assemble_prompt,
+    assemble_reply_prompt,
+    build_reply_generator,
     build_review_generator,
 )
 
@@ -57,6 +60,34 @@ async def build_review_comment(
             head_sha=head_sha,
         )
         return build_placeholder_review_comment(head_sha)
+
+
+async def build_review_reply_comment(
+    pull_request: PullRequest,
+    *,
+    review_comment: str,
+    user_comment: str,
+    generator: CommentReplyGenerator | None = None,
+) -> str:
+    """Build a reply to a follow-up comment on a PR review."""
+    reply_generator = generator if generator is not None else build_reply_generator()
+
+    if reply_generator is not None:
+        try:
+            user_prompt = await assemble_reply_prompt(
+                pull_request=pull_request,
+                review_comment=review_comment,
+                user_comment=user_comment,
+            )
+            reply = await reply_generator.generate(user_prompt=user_prompt)
+            return _format_reply_comment(reply)
+        except Exception:
+            logger.exception(
+                "reviewer.build_review_reply_comment.generator_failed",
+                pr_number=pull_request.number,
+            )
+
+    return _format_reply_comment(_build_deterministic_reply())
 
 
 def build_placeholder_review_comment(head_sha: str) -> str:
@@ -197,3 +228,17 @@ def _derive_questions(changed_files: list[str]) -> list[str]:
         questions.append("Are there operator-facing configuration updates that should be documented?")
 
     return questions[:3]
+
+
+def _format_reply_comment(reply_body: str) -> str:
+    return "\n".join(
+        [
+            "PRahari follow-up",
+            "",
+            reply_body.strip() or "Thanks for the follow-up. Could you share more context?",
+        ]
+    )
+
+
+def _build_deterministic_reply() -> str:
+    return "Thanks for the follow-up. Could you share more context or a specific question?"
