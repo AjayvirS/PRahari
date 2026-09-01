@@ -15,6 +15,7 @@ logger = get_logger(__name__)
 _BASE_URL = "https://api.github.com"
 JsonDict = dict[str, Any]
 JsonList = list[JsonDict]
+_PAGE_SIZE = 100
 
 
 @dataclass(slots=True)
@@ -56,7 +57,7 @@ class Client(ABC):
     async def list_pull_request_files(
         self, owner: str, repo: str, pr_number: int
     ) -> JsonList:
-        """Fetch the changed files for a pull request."""
+        """Fetch all changed files for a pull request across paginated GitHub responses."""
 
     @abstractmethod
     async def post_issue_comment(
@@ -68,7 +69,7 @@ class Client(ABC):
     async def get_issue_comments(
         self, owner: str, repo: str, issue_number: int
     ) -> JsonList:
-        """List issue comments for a pull request."""
+        """List all issue comments for a pull request across paginated GitHub responses."""
 
     @abstractmethod
     async def get_repository_file_content(
@@ -103,8 +104,8 @@ class GitHubClient(Client):
     async def list_pull_request_files(
         self, owner: str, repo: str, pr_number: int
     ) -> JsonList:
-        """Fetch the changed files for a pull request."""
-        return await self._request("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}/files")
+        """Fetch all changed files for a pull request across paginated GitHub responses."""
+        return await self._request_paginated_list(f"/repos/{owner}/{repo}/pulls/{pr_number}/files")
 
     async def post_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
@@ -119,11 +120,9 @@ class GitHubClient(Client):
     async def get_issue_comments(
         self, owner: str, repo: str, issue_number: int
     ) -> JsonList:
-        """List issue comments for a pull request."""
-        return await self._request(
-            "GET",
-            f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
-            params={"per_page": 100},
+        """List all issue comments for a pull request across paginated GitHub responses."""
+        return await self._request_paginated_list(
+            f"/repos/{owner}/{repo}/issues/{issue_number}/comments"
         )
 
     async def get_repository_file_content(
@@ -166,6 +165,31 @@ class GitHubClient(Client):
         payload = response.json()
         logger.info("github.request", method=method, path=path, status_code=response.status_code)
         return payload
+
+    async def _request_paginated_list(self, path: str) -> JsonList:
+        """Collect all pages for list endpoints that support GitHub pagination."""
+        items: JsonList = []
+        page = 1
+
+        while True:
+            payload = await self._request(
+                "GET",
+                path,
+                params={"per_page": _PAGE_SIZE, "page": page},
+            )
+            if not isinstance(payload, list):
+                raise TypeError(f"Expected list payload for paginated path {path}, got {type(payload)!r}.")
+
+            if not payload:
+                break
+
+            items.extend(payload)
+            if len(payload) < _PAGE_SIZE:
+                break
+
+            page += 1
+
+        return items
 
 
 github_client = GitHubClient()
