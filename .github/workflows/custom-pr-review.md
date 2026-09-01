@@ -7,8 +7,9 @@ on:
 
 if: contains(github.event.pull_request.labels.*.name, 'ai-review')
 
-engine: copilot
-model: auto
+engine:
+    id: copilot
+    model: copilot/auto
 
 imports:
   - .github/agents/code-review.agent.md
