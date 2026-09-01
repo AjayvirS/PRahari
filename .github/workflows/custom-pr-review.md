@@ -2,10 +2,9 @@
 description: Read-only, PRahari-specific AI review for every meaningful pull-request update
 
 on:
-  stale-check: full
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
 if: contains(github.event.pull_request.labels.*.name, 'ai-review')
 
 engine: copilot
