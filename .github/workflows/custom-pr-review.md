@@ -5,8 +5,11 @@ on:
   stale-check: full
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    
+if: contains(github.event.pull_request.labels.*.name, 'ai-review')
 
 engine: copilot
+model: auto
 
 imports:
   - .github/agents/code-review.agent.md
